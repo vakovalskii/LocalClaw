@@ -2,9 +2,9 @@
 set -euo pipefail
 
 # =============================================================================
-# SimpleClaw — Install Wizard
+# LocalClaw — Install Wizard
 # Deploys a personal AI agent on any Linux server in 3 steps.
-# Usage: curl -fsSL https://raw.githubusercontent.com/vakovalskii/SimpleClaw/main/install.sh | bash
+# Usage: curl -fsSL https://raw.githubusercontent.com/vakovalskii/LocalClaw/main/install.sh | bash
 # =============================================================================
 
 # Colors
@@ -16,7 +16,7 @@ CYAN='\033[0;36m'
 BOLD='\033[1m'
 NC='\033[0m'
 
-INSTALL_DIR="$HOME/simpleclaw"
+INSTALL_DIR="$HOME/localclaw"
 SPINNER_PID=""
 
 # --- Helpers -----------------------------------------------------------------
@@ -24,7 +24,7 @@ SPINNER_PID=""
 print_header() {
   echo ""
   echo -e "${BOLD}${CYAN}╔══════════════════════════════════════════╗${NC}"
-  echo -e "${BOLD}${CYAN}║        🤖 SimpleClaw Installer           ║${NC}"
+  echo -e "${BOLD}${CYAN}║        🤖 LocalClaw Installer           ║${NC}"
   echo -e "${BOLD}${CYAN}╚══════════════════════════════════════════╝${NC}"
   echo ""
 }
@@ -504,8 +504,8 @@ services:
       - agent-net
 
   core:
-    image: ghcr.io/vakovalskii/simpleclaw-core:latest
-    container_name: simpleclaw-core
+    image: ghcr.io/vakovalskii/localclaw-core:latest
+    container_name: localclaw-core
     restart: unless-stopped
     depends_on:
       postgres:
@@ -514,8 +514,8 @@ services:
       - TZ=Europe/Moscow
       - API_PORT=4000
       - POSTGRES_HOST=postgres
-      - POSTGRES_DB=simpleclaw
-      - POSTGRES_USER=simpleclaw
+      - POSTGRES_DB=localclaw
+      - POSTGRES_USER=localclaw
       - PUBLIC_URL=https://${DOMAIN}
     secrets:
       - postgres_password
@@ -544,8 +544,8 @@ services:
       start_period: 15s
 
   bot:
-    image: ghcr.io/vakovalskii/simpleclaw-bot:latest
-    container_name: simpleclaw-bot
+    image: ghcr.io/vakovalskii/localclaw-bot:latest
+    container_name: localclaw-bot
     restart: unless-stopped
     depends_on:
       core:
@@ -560,8 +560,8 @@ services:
       - agent-net
 
   admin:
-    image: ghcr.io/vakovalskii/simpleclaw-admin:latest
-    container_name: simpleclaw-admin
+    image: ghcr.io/vakovalskii/localclaw-admin:latest
+    container_name: localclaw-admin
     restart: unless-stopped
     depends_on:
       core:
@@ -582,11 +582,11 @@ services:
 
   postgres:
     image: postgres:16-alpine
-    container_name: simpleclaw-postgres
+    container_name: localclaw-postgres
     restart: unless-stopped
     environment:
-      - POSTGRES_DB=simpleclaw
-      - POSTGRES_USER=simpleclaw
+      - POSTGRES_DB=localclaw
+      - POSTGRES_USER=localclaw
       - POSTGRES_PASSWORD_FILE=/run/secrets/postgres_password
     secrets:
       - postgres_password
@@ -595,7 +595,7 @@ services:
     networks:
       - agent-net
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U simpleclaw"]
+      test: ["CMD-SHELL", "pg_isready -U localclaw"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -650,8 +650,8 @@ else
   cat > "$INSTALL_DIR/docker-compose.yml" << COMPOSE
 services:
   core:
-    image: ghcr.io/vakovalskii/simpleclaw-core:latest
-    container_name: simpleclaw-core
+    image: ghcr.io/vakovalskii/localclaw-core:latest
+    container_name: localclaw-core
     restart: unless-stopped
     depends_on:
       postgres:
@@ -660,8 +660,8 @@ services:
       - TZ=Europe/Moscow
       - API_PORT=4000
       - POSTGRES_HOST=postgres
-      - POSTGRES_DB=simpleclaw
-      - POSTGRES_USER=simpleclaw
+      - POSTGRES_DB=localclaw
+      - POSTGRES_USER=localclaw
       - PUBLIC_URL=http://${SERVER_IP}:${ACCESS_PORT}
     secrets:
       - postgres_password
@@ -684,8 +684,8 @@ services:
       start_period: 15s
 
   bot:
-    image: ghcr.io/vakovalskii/simpleclaw-bot:latest
-    container_name: simpleclaw-bot
+    image: ghcr.io/vakovalskii/localclaw-bot:latest
+    container_name: localclaw-bot
     restart: unless-stopped
     depends_on:
       core:
@@ -700,8 +700,8 @@ services:
       - agent-net
 
   admin:
-    image: ghcr.io/vakovalskii/simpleclaw-admin:latest
-    container_name: simpleclaw-admin
+    image: ghcr.io/vakovalskii/localclaw-admin:latest
+    container_name: localclaw-admin
     restart: unless-stopped
     depends_on:
       core:
@@ -718,11 +718,11 @@ services:
 
   postgres:
     image: postgres:16-alpine
-    container_name: simpleclaw-postgres
+    container_name: localclaw-postgres
     restart: unless-stopped
     environment:
-      - POSTGRES_DB=simpleclaw
-      - POSTGRES_USER=simpleclaw
+      - POSTGRES_DB=localclaw
+      - POSTGRES_USER=localclaw
       - POSTGRES_PASSWORD_FILE=/run/secrets/postgres_password
     secrets:
       - postgres_password
@@ -731,7 +731,7 @@ services:
     networks:
       - agent-net
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U simpleclaw"]
+      test: ["CMD-SHELL", "pg_isready -U localclaw"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -777,10 +777,10 @@ info "Запускаю контейнеры..."
 cd "$INSTALL_DIR"
 
 spinner_start "docker compose up -d..."
-if ! $COMPOSE_CMD up -d 2>/tmp/simpleclaw_up.log; then
+if ! $COMPOSE_CMD up -d 2>/tmp/localclaw_up.log; then
   spinner_stop
   error "Ошибка запуска:"
-  tail -20 /tmp/simpleclaw_up.log
+  tail -20 /tmp/localclaw_up.log
   echo ""
   error "Логи контейнеров:"
   $COMPOSE_CMD logs --tail=20 2>/dev/null || true

@@ -1,4 +1,4 @@
-# SimpleClaw — Plan
+# LocalClaw — Plan
 
 Personal AI agent platform. Single-user. Deploys in 3 steps on any Linux server.
 
