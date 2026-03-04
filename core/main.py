@@ -1,9 +1,20 @@
 """LocalClaw Core — entry point."""
 
+import asyncio
 import uvicorn
 from config import CONFIG
 from logger import core_logger
 from db import init_db
+
+
+async def _startup():
+    init_db()
+    # Initialize MCP servers if configured
+    try:
+        from tools.mcp import init_mcp
+        await init_mcp(CONFIG.workspace)
+    except Exception as e:
+        core_logger.warning(f"MCP init skipped: {e}")
 
 
 def main():
@@ -15,7 +26,7 @@ def main():
     core_logger.info(f"  Port:      {CONFIG.api_port}")
     core_logger.info("=" * 50)
 
-    init_db()
+    asyncio.run(_startup())
 
     from api import app
     uvicorn.run(app, host="0.0.0.0", port=CONFIG.api_port, log_level="warning")

@@ -1,0 +1,29 @@
+{
+  "_comment": "MCP server configuration for LocalClaw. Copy to /data/workspace/mcp_servers.json",
+  "_docs": "https://modelcontextprotocol.io/servers",
+  "servers": {
+    "_example_filesystem": {
+      "_comment": "Remove leading underscore to enable. Provides read/write access to a local directory.",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/data/workspace"]
+    },
+    "_example_github": {
+      "_comment": "GitHub MCP server. Set GITHUB_TOKEN in env.",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": {
+        "GITHUB_TOKEN": "ghp_YOUR_TOKEN_HERE"
+      }
+    },
+    "_example_sqlite": {
+      "_comment": "SQLite database access",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-sqlite", "/data/mydb.sqlite"]
+    },
+    "_example_puppeteer": {
+      "_comment": "Browser automation",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-puppeteer"]
+    }
+  }
+}

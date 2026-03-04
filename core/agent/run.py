@@ -15,6 +15,7 @@ from agent._types import AgentResult, Session
 from agent.session import sessions
 from agent.prompt import load_system_prompt, format_system_prompt
 from agent.context import inject_memory
+from agent.skills import load_skills
 
 
 async def run_agent(
@@ -38,14 +39,16 @@ async def run_agent(
     workspace_info = f"Workspace: {cwd}"
     workspace_info, _ = await inject_memory(cwd, workspace_info)
 
-    # Load and format system prompt
+    # Load skills and tools
     tool_definitions = get_tool_definitions()
     tools_list = "\n".join(
         f"- {t['function']['name']}: {t['function'].get('description', '')}"
         for t in tool_definitions
     )
+    skills_list = load_skills(cwd)
+
     template = load_system_prompt()
-    system_prompt = format_system_prompt(template, cwd=cwd, tools_list=tools_list)
+    system_prompt = format_system_prompt(template, cwd=cwd, tools_list=tools_list, skills_list=skills_list)
     system_prompt += f"\n\n{workspace_info}"
 
     # Prepare messages
