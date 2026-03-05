@@ -1186,6 +1186,66 @@
 <!-- Toast -->
 <div id="toast"></div>
 
+<!-- Agents Panel -->
+<div id="agents-panel">
+  <div id="agents-panel-header">
+    <span style="font-size:11px;font-weight:700;letter-spacing:0.1em;color:var(--amber);">⚙ AGENTS</span>
+    <span style="flex:1;"></span>
+    <button id="agents-panel-close" style="background:none;border:none;color:var(--text2);cursor:pointer;font-size:16px;">✕</button>
+  </div>
+  <div id="agents-list" style="flex:1;overflow-y:auto;scrollbar-width:thin;"></div>
+  <div style="padding:12px;border-top:1px solid var(--border);display:flex;gap:8px;">
+    <input class="form-input" id="new-agent-name" placeholder="New agent name..." style="flex:1;font-size:11px;height:32px;padding:0 8px;">
+    <button class="btn" id="new-agent-btn" style="height:32px;padding:0 12px;font-size:10px;">+ ADD</button>
+  </div>
+</div>
+
+<!-- New Task Modal -->
+<div class="modal-overlay" id="task-modal">
+  <div class="modal">
+    <div class="modal-title">NEW TASK</div>
+    <div class="form-field">
+      <div class="form-label">Title</div>
+      <input class="form-input" id="kt-title" placeholder="Task title">
+    </div>
+    <div class="form-field">
+      <div class="form-label">Description / Prompt for agent</div>
+      <textarea class="form-input" id="kt-desc" rows="3" style="resize:vertical;"></textarea>
+    </div>
+    <div style="display:flex;gap:12px;">
+      <div class="form-field" style="flex:1;">
+        <div class="form-label">Agent (optional)</div>
+        <select class="form-input" id="kt-agent"></select>
+      </div>
+      <div class="form-field" style="flex:1;">
+        <div class="form-label">Column</div>
+        <select class="form-input" id="kt-col">
+          <option value="backlog">Backlog</option>
+          <option value="in_progress">In Progress</option>
+          <option value="review">Review</option>
+          <option value="done">Done</option>
+        </select>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="task-modal-cancel">CANCEL</button>
+      <button class="btn" id="task-modal-save">CREATE TASK</button>
+    </div>
+  </div>
+</div>
+
+<!-- Artifact Modal -->
+<div class="modal-overlay" id="artifact-modal">
+  <div class="modal" style="width:640px;max-width:92vw;">
+    <div style="display:flex;align-items:center;gap:10px;">
+      <span class="modal-title">◉ ARTIFACT</span>
+      <span style="flex:1;"></span>
+      <button id="artifact-modal-close" style="background:none;border:none;color:var(--text2);cursor:pointer;font-size:18px;">✕</button>
+    </div>
+    <div id="artifact-content" class="artifact-content" style="background:var(--bg);border:1px solid var(--border);border-radius:2px;padding:16px;font-size:12px;line-height:1.7;max-height:60vh;overflow-y:auto;white-space:pre-wrap;scrollbar-width:thin;"></div>
+  </div>
+</div>
+
 <script>
 // ── Config ────────────────────────────────────────────────────────────────────
 
@@ -2203,67 +2263,6 @@ document.getElementById('task-modal').addEventListener('click', e => {
 
 </script>
 
-<!-- Agents Panel -->
-<div id="agents-panel">
-  <div id="agents-panel-header">
-    <span style="font-size:11px;font-weight:700;letter-spacing:0.1em;color:var(--amber);">⚙ AGENTS</span>
-    <span style="flex:1;"></span>
-    <button id="agents-panel-close" style="background:none;border:none;color:var(--text2);cursor:pointer;font-size:16px;">✕</button>
-  </div>
-  <div id="agents-list" style="flex:1;overflow-y:auto;scrollbar-width:thin;"></div>
-  <div style="padding:12px;border-top:1px solid var(--border);display:flex;gap:8px;">
-    <input class="form-input" id="new-agent-name" placeholder="New agent name..." style="flex:1;font-size:11px;height:32px;padding:0 8px;">
-    <button class="btn" id="new-agent-btn" style="height:32px;padding:0 12px;font-size:10px;">+ ADD</button>
-  </div>
-</div>
-
-<!-- New Task Modal -->
-<div class="modal-overlay" id="task-modal">
-  <div class="modal">
-    <div class="modal-title">NEW TASK</div>
-    <div class="form-field">
-      <div class="form-label">Title</div>
-      <input class="form-input" id="kt-title" placeholder="Task title">
-    </div>
-    <div class="form-field">
-      <div class="form-label">Description / Prompt for agent</div>
-      <textarea class="form-input" id="kt-desc" rows="4" placeholder="Describe what the agent should do..."></textarea>
-    </div>
-    <div style="display:flex;gap:12px;">
-      <div class="form-field" style="flex:1;">
-        <div class="form-label">Assign Agent</div>
-        <select class="form-input" id="kt-agent">
-          <option value="">— no agent —</option>
-        </select>
-      </div>
-      <div class="form-field" style="flex:1;">
-        <div class="form-label">Column</div>
-        <select class="form-input" id="kt-col">
-          <option value="backlog">Backlog</option>
-          <option value="in_progress">In Progress</option>
-          <option value="review">Ready for Review</option>
-          <option value="done">Done</option>
-        </select>
-      </div>
-    </div>
-    <div class="modal-actions">
-      <button class="btn btn-ghost" id="task-modal-cancel">CANCEL</button>
-      <button class="btn" id="task-modal-save">CREATE TASK</button>
-    </div>
-  </div>
-</div>
-
-<!-- Artifact Modal -->
-<div class="modal-overlay" id="artifact-modal">
-  <div class="modal" style="width:640px;max-width:92vw;">
-    <div style="display:flex;align-items:center;gap:10px;">
-      <span class="modal-title">◉ ARTIFACT</span>
-      <span style="flex:1;"></span>
-      <button id="artifact-modal-close" style="background:none;border:none;color:var(--text2);cursor:pointer;font-size:18px;">✕</button>
-    </div>
-    <div id="artifact-content" class="artifact-content" style="background:var(--bg);border:1px solid var(--border);border-radius:2px;padding:16px;font-size:12px;line-height:1.7;max-height:60vh;overflow-y:auto;white-space:pre-wrap;scrollbar-width:thin;"></div>
-  </div>
-</div>
 
 </body>
 </html>
