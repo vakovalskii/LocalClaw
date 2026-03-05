@@ -543,22 +543,25 @@ async def run_kanban_task(task_id: int, _=Depends(_check_auth)):
     # Move to in_progress
     update_kanban_task(task_id, column="in_progress", status="running")
 
-    # Build prompt with agent identity prepended
-    agent_identity = ""
+    # Build extra system prompt: agent identity + owner context
+    extra_parts = []
     if task.get("agent_name"):
-        agent_identity = f"You are {task['agent_name']}."
-        if task.get("agent_system_prompt") or task.get("system_prompt"):
-            sp = task.get("system_prompt") or ""
-            agent_identity += f"\n{sp}"
+        extra_parts.append(f"Your name: {task['agent_name']}")
+        if task.get("agent_emoji"):
+            extra_parts[-1] += f" {task['agent_emoji']}"
+    if task.get("system_prompt"):
+        extra_parts.append(task["system_prompt"])
+    if CONFIG.owner_id:
+        extra_parts.append(f"Owner Telegram ID: {CONFIG.owner_id}")
+    extra_system = "\n".join(extra_parts)
 
-    prompt = task["description"] or task["title"]
-    full_prompt = f"{agent_identity}\n\n---\n\nTask: {task['title']}\n\n{task['description']}".strip() if agent_identity else f"Task: {task['title']}\n\n{task['description']}".strip()
+    task_prompt = f"Task: {task['title']}\n\n{task['description']}".strip()
 
     async def _run():
         try:
             # Use a dedicated chat_id per task to isolate session
             chat_id = -(task_id + 100000)
-            result = await run_agent(chat_id, full_prompt)
+            result = await run_agent(chat_id, task_prompt, task_mode=True, extra_system=extra_system)
             artifact_md = f"# {task['title']}\n\n{result.text}\n"
             # Save .md artifact to workspace
             artifact_filename = f"task_{task_id}_{task['title'][:30].replace(' ', '_').lower()}.md"

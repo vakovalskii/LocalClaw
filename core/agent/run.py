@@ -22,9 +22,15 @@ async def run_agent(
     chat_id: int,
     message: str,
     on_event=None,
+    task_mode: bool = False,
+    extra_system: str = "",
 ) -> AgentResult:
     """
     Run the ReAct agent loop for a single message.
+
+    task_mode=True  — kanban/background task: skip bootstrap/onboarding files,
+                      no workspace seeding, no daily memory injection.
+    extra_system    — prepended to system prompt (agent identity, owner info).
 
     on_event(type, data) — optional callback for streaming events:
         type="text",       data={"text": "..."}   — incremental text token
@@ -34,14 +40,18 @@ async def run_agent(
     session = sessions.get(chat_id)
     cwd = session.cwd
 
-    # Seed workspace with default files on first run
-    seed_workspace(cwd)
-
     # Build workspace context
     workspace_info = f"Workspace: {cwd}"
-    workspace_info = await inject_bootstrap_files(cwd, workspace_info)
-    workspace_info = await inject_daily_memory(cwd, workspace_info)
-    workspace_info, _ = await inject_memory(cwd, workspace_info)
+
+    if task_mode:
+        # Kanban agents: no onboarding, no bootstrap, no daily memory
+        workspace_info += "\n\nYou are a focused task agent. Complete the assigned task directly."
+    else:
+        # Regular chat: seed workspace and inject all context files
+        seed_workspace(cwd)
+        workspace_info = await inject_bootstrap_files(cwd, workspace_info)
+        workspace_info = await inject_daily_memory(cwd, workspace_info)
+        workspace_info, _ = await inject_memory(cwd, workspace_info)
 
     # Load skills and tools
     tool_definitions = get_tool_definitions()
@@ -53,6 +63,8 @@ async def run_agent(
 
     template = load_system_prompt()
     system_prompt = format_system_prompt(template, cwd=cwd, tools_list=tools_list, skills_list=skills_list)
+    if extra_system:
+        system_prompt = extra_system + "\n\n---\n\n" + system_prompt
     system_prompt += f"\n\n{workspace_info}"
 
     # Prepare messages
