@@ -153,10 +153,19 @@ async def _stream_reply(
                                             chat_id=chat_id,
                                             message_id=sent_msg.message_id,
                                             text=preview,
+                                            parse_mode="Markdown",
                                         )
                                         last_edit_at = now
                                     except BadRequest:
-                                        pass
+                                        try:
+                                            await bot.edit_message_text(
+                                                chat_id=chat_id,
+                                                message_id=sent_msg.message_id,
+                                                text=preview,
+                                            )
+                                            last_edit_at = now
+                                        except BadRequest:
+                                            pass
 
                     elif etype == "tool_start":
                         name = event.get("name", "")
@@ -196,7 +205,18 @@ async def _stream_reply(
                 chat_id=chat_id,
                 text=chunk,
                 reply_to_message_id=reply_to,
+                parse_mode="Markdown",
             )
+        except BadRequest:
+            # Markdown parse failed (e.g. unmatched backticks) — send as plain text
+            try:
+                await bot.send_message(
+                    chat_id=chat_id,
+                    text=chunk,
+                    reply_to_message_id=reply_to,
+                )
+            except Exception as e:
+                log.error(f"Send chunk error: {e}")
         except Exception as e:
             log.error(f"Send chunk error: {e}")
 
