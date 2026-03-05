@@ -1282,6 +1282,25 @@
       <button class="btn btn-ghost" id="settings-restart-btn" style="color:var(--amber);border-color:var(--amber);">RESTART CORE</button>
       <span id="settings-status" style="display:flex;align-items:center;font-size:11px;color:var(--text3);"></span>
     </div>
+    <div style="margin-top:32px;">
+      <div class="section-title">UPDATE</div>
+      <div id="version-info" style="display:flex;flex-direction:column;gap:10px;margin-top:8px;">
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+          <span style="color:var(--text2);font-size:12px;">Current: <span id="v-local" style="color:var(--text);font-weight:700;">—</span></span>
+          <span style="color:var(--text3);font-size:11px;" id="v-local-msg"></span>
+        </div>
+        <div id="v-remote-wrap" style="display:none;align-items:center;gap:12px;flex-wrap:wrap;">
+          <span style="color:var(--green);font-size:12px;font-weight:700;">New version available: <span id="v-remote">—</span></span>
+          <span style="color:var(--text3);font-size:11px;" id="v-remote-msg"></span>
+        </div>
+        <div id="v-uptodate" style="display:none;color:var(--text3);font-size:11px;">Up to date</div>
+        <div style="display:flex;gap:10px;align-items:center;margin-top:4px;">
+          <button class="btn btn-ghost" id="version-check-btn" style="height:32px;font-size:11px;padding:0 14px;">CHECK FOR UPDATES</button>
+          <button class="btn" id="version-update-btn" style="display:none;height:32px;font-size:11px;padding:0 14px;background:var(--green);">UPDATE &amp; RESTART</button>
+          <span id="version-status" style="font-size:11px;color:var(--text3);"></span>
+        </div>
+      </div>
+    </div>
   </div>
 
 </div>
@@ -2203,6 +2222,8 @@ async function loadSettings() {
     document.getElementById('s-timeout').value = d.command_timeout || 60;
     document.getElementById('s-workspace').textContent = d.workspace || '—';
     document.getElementById('s-owner').textContent = d.owner_id || '—';
+    // Auto-check version when settings load
+    checkVersion();
   } catch(e) {
     toast('Settings load error: ' + e.message);
   }
@@ -2233,6 +2254,95 @@ document.getElementById('settings-restart-btn').addEventListener('click', async 
   } catch(e) {
     status.textContent = '↻ restarting (process killed)';
     status.style.color = 'var(--amber)';
+  }
+});
+
+// ── Version & Update ──────────────────────────────────────────────────────────
+
+async function checkVersion() {
+  const vstatus = document.getElementById('version-status');
+  vstatus.textContent = 'checking...';
+  vstatus.style.color = 'var(--text3)';
+  try {
+    const d = await api('GET', '/version');
+    document.getElementById('v-local').textContent = d.local.short || '—';
+    document.getElementById('v-local-msg').textContent = d.local.message || '';
+
+    if (d.update_available) {
+      document.getElementById('v-remote').textContent = d.remote.short;
+      document.getElementById('v-remote-msg').textContent = d.remote.message || '';
+      document.getElementById('v-remote-wrap').style.display = 'flex';
+      document.getElementById('v-uptodate').style.display = 'none';
+      document.getElementById('version-update-btn').style.display = '';
+    } else {
+      document.getElementById('v-remote-wrap').style.display = 'none';
+      document.getElementById('v-uptodate').style.display = '';
+      document.getElementById('version-update-btn').style.display = 'none';
+    }
+    vstatus.textContent = '';
+  } catch(e) {
+    vstatus.textContent = 'error: ' + e.message;
+    vstatus.style.color = 'var(--red)';
+  }
+}
+
+document.getElementById('version-check-btn').addEventListener('click', checkVersion);
+
+document.getElementById('version-update-btn').addEventListener('click', async () => {
+  const vstatus = document.getElementById('version-status');
+  const btn = document.getElementById('version-update-btn');
+  btn.disabled = true;
+  btn.textContent = 'UPDATING...';
+  vstatus.textContent = 'pulling code & restarting...';
+  vstatus.style.color = 'var(--amber)';
+  try {
+    const d = await api('POST', '/update');
+    if (d.status === 'ok') {
+      vstatus.textContent = 'updated! reconnecting...';
+      vstatus.style.color = 'var(--green)';
+      // Poll health until back online (services restart)
+      let tries = 0;
+      const poll = setInterval(async () => {
+        tries++;
+        try {
+          await fetch(API + '/health').then(r => r.json());
+          clearInterval(poll);
+          vstatus.textContent = 'online — update complete!';
+          vstatus.style.color = 'var(--green)';
+          btn.textContent = 'UPDATE & RESTART';
+          btn.disabled = false;
+          btn.style.display = 'none';
+          checkVersion();
+          setTimeout(() => { vstatus.textContent = ''; }, 5000);
+        } catch {
+          if (tries > 40) { clearInterval(poll); vstatus.textContent = 'timeout — check logs'; }
+        }
+      }, 1500);
+    } else {
+      vstatus.textContent = 'error: ' + (d.output || 'unknown');
+      vstatus.style.color = 'var(--red)';
+      btn.textContent = 'UPDATE & RESTART';
+      btn.disabled = false;
+    }
+  } catch(e) {
+    vstatus.textContent = 'update sent (core restarting...)';
+    vstatus.style.color = 'var(--amber)';
+    // Core may have killed itself — poll
+    let tries = 0;
+    const poll = setInterval(async () => {
+      tries++;
+      try {
+        await fetch(API + '/health').then(r => r.json());
+        clearInterval(poll);
+        vstatus.textContent = 'online — update complete!';
+        vstatus.style.color = 'var(--green)';
+        btn.textContent = 'UPDATE & RESTART';
+        btn.disabled = false;
+        checkVersion();
+      } catch {
+        if (tries > 40) { clearInterval(poll); vstatus.textContent = 'timeout'; btn.disabled = false; }
+      }
+    }, 1500);
   }
 });
 

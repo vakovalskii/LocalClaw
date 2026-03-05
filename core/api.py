@@ -441,6 +441,88 @@ async def restart_core(_=Depends(_check_auth)):
     return {"status": "restarting"}
 
 
+# ── Version & Update ─────────────────────────────────────────────────────────
+
+def _get_local_version() -> dict:
+    """Get current git commit info."""
+    import subprocess
+    app_dir = os.path.join(os.path.dirname(__file__), "..")
+    try:
+        short = subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"], cwd=app_dir, stderr=subprocess.DEVNULL
+        ).decode().strip()
+        full = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=app_dir, stderr=subprocess.DEVNULL
+        ).decode().strip()
+        date = subprocess.check_output(
+            ["git", "log", "-1", "--format=%ci"], cwd=app_dir, stderr=subprocess.DEVNULL
+        ).decode().strip()
+        subject = subprocess.check_output(
+            ["git", "log", "-1", "--format=%s"], cwd=app_dir, stderr=subprocess.DEVNULL
+        ).decode().strip()
+        return {"hash": full, "short": short, "date": date, "message": subject}
+    except Exception:
+        return {"hash": "", "short": "unknown", "date": "", "message": ""}
+
+
+@app.get("/version")
+async def get_version(_=Depends(_check_auth)):
+    """Return current local version and check GitHub for latest."""
+    local = _get_local_version()
+    remote = {"hash": "", "short": "", "date": "", "message": ""}
+    update_available = False
+
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(
+                "https://api.github.com/repos/vakovalskii/LocalTaskClaw/commits/main",
+                headers={"Accept": "application/vnd.github.v3+json"},
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                remote = {
+                    "hash": data["sha"],
+                    "short": data["sha"][:7],
+                    "date": data["commit"]["committer"]["date"],
+                    "message": data["commit"]["message"].split("\n")[0],
+                }
+                update_available = (local["hash"] != remote["hash"] and local["hash"] != "")
+    except Exception as e:
+        core_logger.warning(f"Failed to check remote version: {e}")
+
+    return {
+        "local": local,
+        "remote": remote,
+        "update_available": update_available,
+    }
+
+
+@app.post("/update")
+async def run_update(_=Depends(_check_auth)):
+    """Run update.sh to pull latest code and restart services."""
+    import subprocess
+    update_script = os.path.join(os.path.dirname(__file__), "..", "update.sh")
+    if not os.path.isfile(update_script):
+        raise HTTPException(status_code=404, detail="update.sh not found")
+
+    core_logger.info("Update triggered via admin UI")
+    try:
+        result = subprocess.run(
+            ["bash", update_script, "--quiet"],
+            capture_output=True, text=True, timeout=120,
+        )
+        output = (result.stdout + "\n" + result.stderr).strip()
+        if result.returncode != 0:
+            core_logger.error(f"Update failed: {output}")
+            return {"status": "error", "output": output}
+        core_logger.info(f"Update success: {output}")
+        return {"status": "ok", "output": output}
+    except subprocess.TimeoutExpired:
+        return {"status": "error", "output": "Update timed out (120s)"}
+    except Exception as e:
+        return {"status": "error", "output": str(e)}
+
+
 # ── Logs ──────────────────────────────────────────────────────────────────────
 
 _LOG_FILES = {
