@@ -1190,6 +1190,7 @@
 // ── Config ────────────────────────────────────────────────────────────────────
 
 const API = `${window.location.protocol}//${window.location.hostname}:11387`;
+let chatHistoryLoaded = false;
 const API_KEY = (() => {
   let k = localStorage.getItem('lc_api_key');
   if (!k) {
@@ -1302,7 +1303,6 @@ const chatInput = document.getElementById('chat-input');
 const sendBtn = document.getElementById('send-btn');
 
 let isStreaming = false;
-let chatHistoryLoaded = false;
 
 async function loadChatHistory() {
   try {
