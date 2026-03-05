@@ -984,8 +984,17 @@
   <div id="page-sessions" class="page">
     <div id="sessions-wrap">
       <div id="session-list"></div>
-      <div id="session-trace">
-        <div class="empty"><div class="empty-icon">◈</div>Select a session</div>
+      <div style="flex:1;display:flex;flex-direction:column;overflow:hidden;">
+        <div id="session-tabs" style="display:flex;gap:0;border-bottom:1px solid var(--border);padding:0 16px;">
+          <button class="sess-tab active" data-tab="messages" style="background:none;border:none;border-bottom:2px solid var(--amber);color:var(--text1);font-size:10px;font-weight:700;letter-spacing:0.1em;padding:10px 14px;cursor:pointer;">MESSAGES</button>
+          <button class="sess-tab" data-tab="trace" style="background:none;border:none;border-bottom:2px solid transparent;color:var(--text3);font-size:10px;font-weight:700;letter-spacing:0.1em;padding:10px 14px;cursor:pointer;">TRACE</button>
+        </div>
+        <div id="session-messages" style="flex:1;overflow-y:auto;padding:20px 24px;display:flex;flex-direction:column;gap:10px;scrollbar-width:thin;">
+          <div class="empty"><div class="empty-icon">◈</div>Select a session</div>
+        </div>
+        <div id="session-trace" style="flex:1;overflow-y:auto;padding:20px 24px;display:none;flex-direction:column;gap:8px;scrollbar-width:thin;">
+          <div class="empty"><div class="empty-icon">◈</div>Select a session</div>
+        </div>
       </div>
     </div>
   </div>
@@ -1606,12 +1615,58 @@ async function loadSessions() {
       el.addEventListener('click', () => {
         document.querySelectorAll('.session-item').forEach(x => x.classList.remove('active'));
         el.classList.add('active');
+        loadSessionMessages(s.session_key);
         loadTrace(s.session_key);
       });
       list.appendChild(el);
     });
   } catch(e) {
     list.innerHTML = `<div style="padding:16px;color:var(--red);font-size:11px;">Error: ${e.message}</div>`;
+  }
+}
+
+// Tab switching
+document.querySelectorAll('.sess-tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.sess-tab').forEach(b => {
+      b.classList.remove('active');
+      b.style.borderBottomColor = 'transparent';
+      b.style.color = 'var(--text3)';
+    });
+    btn.classList.add('active');
+    btn.style.borderBottomColor = 'var(--amber)';
+    btn.style.color = 'var(--text1)';
+    const tab = btn.dataset.tab;
+    document.getElementById('session-messages').style.display = tab === 'messages' ? 'flex' : 'none';
+    document.getElementById('session-trace').style.display = tab === 'trace' ? 'flex' : 'none';
+  });
+});
+
+async function loadSessionMessages(sessionKey) {
+  const chatIdForKey = sessionKey.replace('owner_', '');
+  const box = document.getElementById('session-messages');
+  box.innerHTML = '<div class="empty"><div class="empty-icon">⟳</div>Loading...</div>';
+  try {
+    const d = await api('GET', `/history?chat_id=${encodeURIComponent(chatIdForKey)}`);
+    box.innerHTML = '';
+    const msgs = (d.messages || []).filter(m =>
+      (m.role === 'user' || m.role === 'assistant') && m.content && m.content !== 'null'
+    );
+    if (!msgs.length) {
+      box.innerHTML = '<div class="empty"><div class="empty-icon">◈</div>No messages</div>';
+      return;
+    }
+    msgs.forEach(m => {
+      const el = document.createElement('div');
+      const isUser = m.role === 'user';
+      const text = typeof m.content === 'string' ? m.content : JSON.stringify(m.content);
+      el.style.cssText = `max-width:85%;align-self:${isUser ? 'flex-end' : 'flex-start'};background:${isUser ? 'var(--amber)' : 'var(--bg2)'};color:${isUser ? '#000' : 'var(--text1)'};padding:8px 12px;border-radius:2px;font-size:12px;line-height:1.6;white-space:pre-wrap;word-break:break-word;`;
+      el.textContent = text.slice(0, 1000) + (text.length > 1000 ? '…' : '');
+      box.appendChild(el);
+    });
+    box.scrollTop = box.scrollHeight;
+  } catch(e) {
+    box.innerHTML = `<div style="padding:16px;color:var(--red);font-size:11px;">Error: ${e.message}</div>`;
   }
 }
 
