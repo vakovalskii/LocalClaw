@@ -14,7 +14,8 @@ from tools.edit import tool_edit_file, TOOL_DEFINITION as EDIT_DEF
 from tools.telegram import tool_telegram_notify, TOOL_DEFINITION as TELEGRAM_DEF
 from tools.kanban import (
     tool_kanban_list, tool_kanban_move, tool_kanban_run,
-    tool_kanban_update, tool_kanban_create,
+    tool_kanban_update, tool_kanban_create, tool_kanban_create_agent,
+    tool_kanban_read_result, tool_kanban_verify, tool_kanban_report,
     TOOL_DEFINITIONS as KANBAN_DEFS,
 )
 
@@ -37,6 +38,10 @@ _BUILTIN_HANDLERS = {
     "kanban_run": tool_kanban_run,
     "kanban_update": tool_kanban_update,
     "kanban_create": tool_kanban_create,
+    "kanban_create_agent": tool_kanban_create_agent,
+    "kanban_read_result": tool_kanban_read_result,
+    "kanban_verify": tool_kanban_verify,
+    "kanban_report": tool_kanban_report,
 }
 
 _DEFINITIONS = [BASH_DEF] + WEB_DEFS + FILE_DEFS + [EDIT_DEF, MEMORY_DEF, SCHEDULER_DEF, SEARCH_TOOLS_DEF, TELEGRAM_DEF] + KANBAN_DEFS

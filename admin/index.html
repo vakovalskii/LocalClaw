@@ -625,6 +625,54 @@
   /* ── Kanban ── */
   #page-kanban { flex: 1; overflow: hidden; flex-direction: column; }
 
+  /* Board switcher */
+  #kb-boards-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 16px 0;
+    border-bottom: 1px solid var(--border);
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  #kb-boards-bar::-webkit-scrollbar { display: none; }
+  #kb-boards-tabs { display: flex; gap: 2px; }
+  .kb-board-tab {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 12px;
+    border-radius: 4px 4px 0 0;
+    border: 1px solid transparent;
+    border-bottom: none;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text2);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.12s, color 0.12s;
+    position: relative;
+    bottom: -1px;
+  }
+  .kb-board-tab:hover { background: var(--bg2); color: var(--text1); }
+  .kb-board-tab.active {
+    background: var(--bg1);
+    border-color: var(--border);
+    color: var(--text1);
+  }
+  .kb-board-tab .kb-tab-del {
+    margin-left: 2px;
+    opacity: 0;
+    font-size: 10px;
+    color: var(--text3);
+    line-height: 1;
+    padding: 0 2px;
+    border-radius: 2px;
+    transition: opacity 0.1s;
+  }
+  .kb-board-tab:hover .kb-tab-del { opacity: 1; }
+  .kb-board-tab .kb-tab-del:hover { color: var(--red); background: #1a0a0a; }
+
   #kanban-toolbar {
     display: flex;
     align-items: center;
@@ -783,6 +831,32 @@
   .kb-status.done { background: #0d1f17; color: var(--green); }
   .kb-status.error { background: #1a0a0a; color: var(--red); }
 
+  /* Live activity line under running cards */
+  .kb-activity {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 10px;
+    color: var(--blue);
+    margin: 4px 0 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    opacity: 0.85;
+  }
+  .kb-activity-dot {
+    flex-shrink: 0;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--blue);
+    animation: pulse-dot 1.2s ease-in-out infinite;
+  }
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.3; transform: scale(0.6); }
+  }
+
   .kb-card-actions {
     display: flex;
     gap: 4px;
@@ -935,12 +1009,14 @@
   }
 
   /* Column color accents */
-  .kb-col[data-col="backlog"]     .kb-col-dot { background: var(--text3); }
-  .kb-col[data-col="in_progress"] .kb-col-dot { background: var(--blue); }
-  .kb-col[data-col="review"]      .kb-col-dot { background: var(--amber); }
-  .kb-col[data-col="done"]        .kb-col-dot { background: var(--green); }
+  .kb-col[data-col="backlog"]      .kb-col-dot { background: var(--text3); }
+  .kb-col[data-col="in_progress"]  .kb-col-dot { background: var(--blue); }
+  .kb-col[data-col="review"]       .kb-col-dot { background: var(--amber); }
+  .kb-col[data-col="needs_human"]  .kb-col-dot { background: var(--red); }
+  .kb-col[data-col="done"]         .kb-col-dot { background: var(--green); }
 
-  .kb-col[data-col="review"] .kb-col-title { color: var(--amber); }
+  .kb-col[data-col="review"]      .kb-col-title { color: var(--amber); }
+  .kb-col[data-col="needs_human"] .kb-col-title { color: var(--red); }
 
   /* ── Toast ── */
   #toast {
@@ -1016,10 +1092,16 @@
 
   <!-- KANBAN -->
   <div id="page-kanban" class="page">
+    <!-- Board switcher tabs -->
+    <div id="kb-boards-bar">
+      <div id="kb-boards-tabs"></div>
+      <button id="kb-new-board-btn" title="New board" style="flex-shrink:0;background:none;border:1px dashed var(--border);color:var(--text3);border-radius:4px;padding:0 10px;height:26px;font-size:11px;cursor:pointer;white-space:nowrap;">＋ Board</button>
+    </div>
     <div id="kanban-toolbar">
       <span style="font-size:10px;font-weight:700;letter-spacing:0.12em;color:var(--text3);">KANBAN</span>
       <span style="flex:1;"></span>
       <button class="btn btn-ghost" id="kb-agents-btn" style="height:30px;padding:0 12px;font-size:10px;">⚙ AGENTS</button>
+      <button class="btn btn-ghost" id="kb-spawn-btn" style="height:30px;padding:0 14px;font-size:10px;color:var(--green);border-color:var(--green);">⚡ SPAWN PROJECT</button>
       <button class="btn" id="kb-new-task-btn" style="height:30px;padding:0 14px;font-size:10px;">+ NEW TASK</button>
     </div>
     <div id="kanban-board">
@@ -1037,7 +1119,6 @@
           <div class="kb-col-dot"></div>
           <div class="kb-col-title">In Progress</div>
           <div class="kb-count" id="cnt-in_progress">0</div>
-          <button class="kb-add-btn" data-col="in_progress" title="Add task">+</button>
         </div>
         <div class="kb-cards" id="col-in_progress"></div>
       </div>
@@ -1046,16 +1127,22 @@
           <div class="kb-col-dot"></div>
           <div class="kb-col-title">Ready for Review</div>
           <div class="kb-count" id="cnt-review">0</div>
-          <button class="kb-add-btn" data-col="review" title="Add task">+</button>
         </div>
         <div class="kb-cards" id="col-review"></div>
+      </div>
+      <div class="kb-col" data-col="needs_human">
+        <div class="kb-col-header">
+          <div class="kb-col-dot"></div>
+          <div class="kb-col-title">Needs Human</div>
+          <div class="kb-count" id="cnt-needs_human">0</div>
+        </div>
+        <div class="kb-cards" id="col-needs_human"></div>
       </div>
       <div class="kb-col" data-col="done">
         <div class="kb-col-header">
           <div class="kb-col-dot"></div>
           <div class="kb-col-title">Done</div>
           <div class="kb-count" id="cnt-done">0</div>
-          <button class="kb-add-btn" data-col="done" title="Add task">+</button>
         </div>
         <div class="kb-cards" id="col-done"></div>
       </div>
@@ -1228,6 +1315,95 @@
   </div>
 </div>
 
+<!-- Agent Editor Modal (full-screen) -->
+<div class="modal-overlay" id="agent-editor-modal" style="align-items:stretch;padding:0;">
+  <div style="display:flex;flex-direction:column;width:100%;height:100%;max-width:860px;margin:0 auto;background:var(--bg1);border-left:1px solid var(--border);border-right:1px solid var(--border);">
+    <!-- Header -->
+    <div style="display:flex;align-items:center;gap:12px;padding:14px 20px;border-bottom:1px solid var(--border);flex-shrink:0;background:var(--bg2);">
+      <div id="ae-modal-avatar" style="width:32px;height:32px;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:18px;"></div>
+      <span id="ae-modal-title" style="font-size:13px;font-weight:700;flex:1;"></span>
+      <button class="btn btn-ghost" id="ae-modal-close" style="height:28px;padding:0 10px;font-size:10px;">✕ CLOSE</button>
+    </div>
+    <!-- Tabs -->
+    <div style="display:flex;border-bottom:1px solid var(--border);flex-shrink:0;background:var(--bg1);">
+      <button class="ae-tab active" data-tab="identity" style="padding:10px 18px;font-family:var(--font);font-size:10px;font-weight:700;letter-spacing:0.08em;background:none;border:none;border-bottom:2px solid var(--amber);color:var(--amber);cursor:pointer;">IDENTITY</button>
+      <button class="ae-tab" data-tab="prompt" style="padding:10px 18px;font-family:var(--font);font-size:10px;font-weight:700;letter-spacing:0.08em;background:none;border:none;border-bottom:2px solid transparent;color:var(--text2);cursor:pointer;">SYSTEM PROMPT</button>
+      <button class="ae-tab" data-tab="tools" style="padding:10px 18px;font-family:var(--font);font-size:10px;font-weight:700;letter-spacing:0.08em;background:none;border:none;border-bottom:2px solid transparent;color:var(--text2);cursor:pointer;">TOOLS</button>
+      <button class="ae-tab" data-tab="files" style="padding:10px 18px;font-family:var(--font);font-size:10px;font-weight:700;letter-spacing:0.08em;background:none;border:none;border-bottom:2px solid transparent;color:var(--text2);cursor:pointer;">FILE ACCESS</button>
+    </div>
+    <!-- Tab content -->
+    <div style="flex:1;overflow-y:auto;scrollbar-width:thin;">
+      <!-- IDENTITY -->
+      <div class="ae-tab-panel" id="ae-panel-identity" style="padding:24px;display:flex;flex-direction:column;gap:14px;">
+        <div style="display:flex;gap:12px;">
+          <div class="form-field" style="flex:1;">
+            <div class="form-label">Name</div>
+            <input class="form-input" id="ae-name" style="font-size:13px;">
+          </div>
+          <div class="form-field" style="width:80px;">
+            <div class="form-label">Emoji</div>
+            <input class="form-input" id="ae-emoji" style="font-size:20px;text-align:center;">
+          </div>
+          <div class="form-field" style="width:80px;">
+            <div class="form-label">Color</div>
+            <input type="color" id="ae-color" style="width:100%;height:36px;border:1px solid var(--border);border-radius:2px;background:var(--bg2);cursor:pointer;">
+          </div>
+          <div class="form-field" style="width:130px;">
+            <div class="form-label">Role</div>
+            <select class="form-input" id="ae-role" style="font-size:12px;height:36px;">
+              <option value="worker">Worker</option>
+              <option value="orchestrator">Orchestrator</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <!-- SYSTEM PROMPT -->
+      <div class="ae-tab-panel" id="ae-panel-prompt" style="padding:24px;display:none;flex-direction:column;gap:14px;">
+        <div style="color:var(--text2);font-size:11px;line-height:1.6;">
+          Текст, который агент видит как свою личность и инструкции. Добавляется перед общим системным промптом.
+        </div>
+        <div class="form-field">
+          <div class="form-label">Identity / Instructions</div>
+          <textarea class="form-input" id="ae-sysprompt" rows="12" style="font-size:12px;resize:vertical;line-height:1.6;"></textarea>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button class="btn btn-ghost" id="ae-preview-btn" style="height:28px;padding:0 12px;font-size:10px;">◉ PREVIEW FULL PROMPT</button>
+          <span id="ae-preview-info" style="font-size:10px;color:var(--text3);"></span>
+        </div>
+        <div id="ae-prompt-preview" style="display:none;background:var(--bg);border:1px solid var(--border);padding:14px;font-size:11px;line-height:1.7;max-height:380px;overflow-y:auto;white-space:pre-wrap;color:var(--text2);scrollbar-width:thin;border-radius:2px;"></div>
+      </div>
+      <!-- TOOLS -->
+      <div class="ae-tab-panel" id="ae-panel-tools" style="padding:24px;display:none;flex-direction:column;gap:14px;">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <div style="color:var(--text2);font-size:11px;flex:1;">Снятые галочки — инструмент недоступен агенту. По умолчанию все разрешены.</div>
+          <button class="btn btn-ghost" id="ae-tools-all" style="height:26px;padding:0 10px;font-size:10px;">ALL</button>
+          <button class="btn btn-ghost" id="ae-tools-none" style="height:26px;padding:0 10px;font-size:10px;">NONE</button>
+        </div>
+        <div id="ae-tools-list" style="display:flex;flex-direction:column;gap:6px;"></div>
+      </div>
+      <!-- FILE ACCESS -->
+      <div class="ae-tab-panel" id="ae-panel-files" style="padding:24px;display:none;flex-direction:column;gap:14px;">
+        <div style="color:var(--text2);font-size:11px;line-height:1.6;">
+          Разрешённые пути (относительно workspace), по одному на строку.<br>
+          Пусто = полный доступ к workspace. Пример: <code style="color:var(--amber);">artifacts</code> даёт доступ только к папке artifacts/.
+        </div>
+        <div class="form-field">
+          <div class="form-label">Allowed paths (one per line)</div>
+          <textarea class="form-input" id="ae-paths" rows="8" style="font-size:12px;resize:vertical;line-height:1.8;" placeholder="artifacts&#10;reports&#10;data/output"></textarea>
+        </div>
+        <div style="font-size:10px;color:var(--text3);">Агент получит ошибку при попытке читать/писать файлы вне этих папок.</div>
+      </div>
+    </div>
+    <!-- Footer actions -->
+    <div style="padding:14px 20px;border-top:1px solid var(--border);display:flex;gap:8px;flex-shrink:0;background:var(--bg2);">
+      <button class="btn btn-ghost btn-red" id="ae-delete-btn" style="height:32px;padding:0 12px;font-size:10px;border-color:var(--red);color:var(--red);">DELETE</button>
+      <span style="flex:1;"></span>
+      <button class="btn btn-ghost" id="ae-cancel-btn" style="height:32px;padding:0 14px;font-size:10px;">CANCEL</button>
+      <button class="btn" id="ae-save-btn" style="height:32px;padding:0 16px;font-size:10px;">SAVE AGENT</button>
+    </div>
+  </div>
+</div>
+
 <!-- New Task Modal -->
 <div class="modal-overlay" id="task-modal">
   <div class="modal">
@@ -1264,6 +1440,28 @@
     <div class="modal-actions">
       <button class="btn btn-ghost" id="task-modal-cancel">CANCEL</button>
       <button class="btn" id="task-modal-save">SAVE</button>
+    </div>
+  </div>
+</div>
+
+<!-- Spawn Project Modal -->
+<div class="modal-overlay" id="spawn-modal">
+  <div class="modal" style="width:600px;max-width:92vw;">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">
+      <span class="modal-title">⚡ SPAWN PROJECT</span>
+      <span style="flex:1;"></span>
+      <button id="spawn-modal-close" style="background:none;border:none;color:var(--text2);cursor:pointer;font-size:18px;">✕</button>
+    </div>
+    <div style="color:var(--text2);font-size:11px;line-height:1.6;margin-bottom:14px;">
+      Опиши проект одним сообщением — агент сам придумает команду, создаст агентов, задачи и запустит оркестратор.
+    </div>
+    <textarea id="spawn-description"
+      style="width:100%;height:120px;background:var(--bg);border:1px solid var(--border2);color:var(--text);font-family:var(--font);font-size:12px;padding:12px;resize:vertical;outline:none;border-radius:2px;line-height:1.6;"
+      placeholder="Например: Хочу ежедневный дайджест новостей по AI + анализ конкурентов моего стартапа в сфере EdTech. Команда должна мониторить несколько источников и писать итоговый отчёт."></textarea>
+    <div id="spawn-log" style="display:none;margin-top:12px;background:var(--bg);border:1px solid var(--border);padding:12px;font-size:11px;line-height:1.7;max-height:240px;overflow-y:auto;white-space:pre-wrap;color:var(--text2);scrollbar-width:thin;"></div>
+    <div class="modal-actions" style="margin-top:14px;">
+      <button class="btn btn-ghost" id="spawn-modal-cancel">CANCEL</button>
+      <button class="btn" id="spawn-modal-run" style="background:var(--green);border-color:var(--green);color:#000;">⚡ LAUNCH</button>
     </div>
   </div>
 </div>
@@ -2077,18 +2275,71 @@ document.getElementById('settings-save-btn').addEventListener('click', async () 
 const COLS = ['backlog', 'in_progress', 'review', 'done'];
 let kbTasks = [];
 let kbAgents = [];
+let kbBoards = [];
+let kbCurrentBoard = 1;
 let kbNewTaskCol = 'backlog';
 let kbPollInterval = null;
 
 async function loadKanban() {
-  const [td, ad] = await Promise.all([
-    api('GET', '/kanban'),
+  const [td, ad, bd] = await Promise.all([
+    api('GET', `/kanban?board_id=${kbCurrentBoard}`),
     api('GET', '/agents'),
+    api('GET', '/kanban/boards'),
   ]);
   kbTasks = td.tasks || [];
   kbAgents = ad.agents || [];
+  kbBoards = bd.boards || [];
+  renderBoards();
   renderKanban();
 }
+
+function renderBoards() {
+  const tabs = document.getElementById('kb-boards-tabs');
+  tabs.innerHTML = '';
+  kbBoards.forEach(b => {
+    const tab = document.createElement('div');
+    tab.className = 'kb-board-tab' + (b.id === kbCurrentBoard ? ' active' : '');
+    tab.dataset.id = b.id;
+    tab.innerHTML = `<span>${b.emoji} ${escHtml(b.name)}</span>`
+      + (b.id !== 1 ? `<span class="kb-tab-del" data-bid="${b.id}" title="Delete board">✕</span>` : '');
+    tab.addEventListener('click', e => {
+      if (e.target.classList.contains('kb-tab-del')) return;
+      switchBoard(b.id);
+    });
+    const del = tab.querySelector('.kb-tab-del');
+    if (del) del.addEventListener('click', async e => {
+      e.stopPropagation();
+      if (!confirm(`Delete board "${b.name}" and all its tasks?`)) return;
+      await api('DELETE', `/kanban/boards/${b.id}`);
+      if (kbCurrentBoard === b.id) kbCurrentBoard = 1;
+      loadKanban();
+    });
+    // Double-click to rename
+    tab.addEventListener('dblclick', e => {
+      if (e.target.classList.contains('kb-tab-del')) return;
+      const newName = prompt('Rename board:', b.name);
+      if (newName && newName.trim()) {
+        api('PATCH', `/kanban/boards/${b.id}`, { name: newName.trim() }).then(loadKanban);
+      }
+    });
+    tabs.appendChild(tab);
+  });
+}
+
+async function switchBoard(boardId) {
+  kbCurrentBoard = boardId;
+  if (kbPollInterval) { clearInterval(kbPollInterval); kbPollInterval = null; }
+  loadKanban();
+}
+
+document.getElementById('kb-new-board-btn').addEventListener('click', async () => {
+  const name = prompt('New board name:');
+  if (!name || !name.trim()) return;
+  const emoji = prompt('Emoji for board (optional):', '📋') || '📋';
+  const board = await api('POST', '/kanban/boards', { name: name.trim(), emoji });
+  kbCurrentBoard = board.id;
+  loadKanban();
+});
 
 function renderKanban() {
   // Clear columns
@@ -2160,18 +2411,28 @@ function buildCard(task, col) {
     ? `<span class="kb-agent-badge" style="color:${agentColor};border:1px solid ${agentColor}33;">${agentEmoji} ${agentName}${roleMark}</span>`
     : '';
 
-  const statusCls = {'idle':'idle','running':'running','done':'done','error':'error'}[task.status] || 'idle';
-  const statusLabel = {'idle':'','running':'● RUNNING','done':'DONE','error':'ERROR'}[task.status] || '';
+  const statusMap = {
+    idle: ['', 'idle'],
+    running: ['● RUNNING', 'running'],
+    done: ['DONE', 'done'],
+    verified: ['✓ VERIFIED', 'done'],
+    error: ['ERROR', 'error'],
+  };
+  const [statusLabel, statusCls] = statusMap[task.status] || ['', 'idle'];
   const statusHtml = statusLabel ? `<span class="kb-status ${statusCls}">${statusLabel}</span>` : '';
 
-  // Navigation arrows
+  // Navigation arrows (exclude done ← review direction; done is human-only)
   const colIdx = COLS.indexOf(col);
-  const leftBtn  = colIdx > 0
+  const leftBtn  = (colIdx > 0 && !(col === 'review'))
     ? `<button class="kb-btn" onclick="moveTask(${task.id},'${COLS[colIdx-1]}')">←</button>` : '';
   const rightBtn = colIdx < COLS.length - 1
     ? `<button class="kb-btn" onclick="moveTask(${task.id},'${COLS[colIdx+1]}')">→</button>` : '';
 
-  const runBtn = (col !== 'done' && task.status !== 'running')
+  // "✓ DONE" button only in review column — human sign-off
+  const doneBtn = col === 'review'
+    ? `<button class="kb-btn" onclick="markDone(${task.id})" title="Mark as Done (human sign-off)" style="color:var(--green);border-color:#1a3020;font-size:10px;font-weight:700;">✓ DONE</button>` : '';
+
+  const runBtn = (col === 'backlog' && task.status !== 'running' && task.agent_id)
     ? `<button class="kb-btn run" onclick="runKbTask(${task.id})" title="Run agent">▶</button>` : '';
   const stopBtn = task.status === 'running'
     ? `<button class="kb-btn del" onclick="cancelKbTask(${task.id})" title="Stop">■</button>` : '';
@@ -2185,16 +2446,24 @@ function buildCard(task, col) {
   const repeatBadge = task.repeat_minutes > 0
     ? `<span style="font-size:9px;color:var(--green);margin-left:4px;" title="Repeat every ${task.repeat_minutes}m">↺${task.repeat_minutes}m</span>` : '';
 
+  // Live activity line — shown only while running
+  const activityHtml = (task.status === 'running' && task.last_action)
+    ? `<div class="kb-activity"><span class="kb-activity-dot"></span>${escHtml(task.last_action)}</div>`
+    : (task.status === 'running'
+      ? `<div class="kb-activity"><span class="kb-activity-dot"></span>работаю…</div>`
+      : '');
+
   card.innerHTML = `
     <div class="kb-card-top">
       ${agentBadge}
       <div class="kb-card-title">${escHtml(task.title)}${repeatBadge}</div>
     </div>
     ${descHtml}
+    ${activityHtml}
     <div class="kb-card-footer">
       ${statusHtml}
       <div class="kb-card-actions">
-        ${leftBtn}${rightBtn}${runBtn}${stopBtn}${editBtn}${artifactBtn}${delBtn}
+        ${doneBtn}${leftBtn}${rightBtn}${runBtn}${stopBtn}${editBtn}${artifactBtn}${delBtn}
       </div>
     </div>`;
   return card;
@@ -2209,6 +2478,13 @@ async function moveTask(taskId, col) {
   await loadKanban();
 }
 
+async function markDone(taskId) {
+  await api('POST', `/kanban/tasks/${taskId}/move`, { column: 'done' });
+  await api('PATCH', `/kanban/tasks/${taskId}`, { status: 'done' });
+  await loadKanban();
+  toast('Moved to Done ✓');
+}
+
 async function runKbTask(taskId) {
   toast('Starting agent...');
   await api('POST', `/kanban/tasks/${taskId}/run`);
@@ -2216,12 +2492,12 @@ async function runKbTask(taskId) {
   // Poll while running
   if (!kbPollInterval) {
     kbPollInterval = setInterval(async () => {
-      const d = await api('GET', '/kanban');
+      const d = await api('GET', `/kanban?board_id=${kbCurrentBoard}`);
       kbTasks = d.tasks || [];
       renderKanban();
       const stillRunning = kbTasks.some(t => t.status === 'running');
       if (!stillRunning) { clearInterval(kbPollInterval); kbPollInterval = null; }
-    }, 3000);
+    }, 1500);
   }
 }
 
@@ -2315,6 +2591,7 @@ document.getElementById('task-modal-save').addEventListener('click', async () =>
       title, description: desc,
       agent_id: agentId ? parseInt(agentId) : null,
       column: col, repeat_minutes: repeat,
+      board_id: kbCurrentBoard,
     });
   }
   document.getElementById('task-modal').classList.remove('open');
@@ -2338,45 +2615,23 @@ function renderAgentsPanel() {
   kbAgents.forEach(a => {
     const card = document.createElement('div');
     card.className = 'agent-card';
+    const toolCount = a.allowed_tools ? a.allowed_tools.length : null;
+    const pathCount = a.allowed_paths ? a.allowed_paths.length : null;
+    const restrictBadges = [
+      toolCount !== null ? `<span style="font-size:9px;color:var(--amber);border:1px solid ${a.color}44;padding:1px 5px;border-radius:2px;">${toolCount} tools</span>` : '',
+      pathCount !== null ? `<span style="font-size:9px;color:var(--green);border:1px solid ${a.color}44;padding:1px 5px;border-radius:2px;">${pathCount} paths</span>` : '',
+    ].filter(Boolean).join(' ');
     card.innerHTML = `
-      <div class="agent-card-header" onclick="this.nextElementSibling.classList.toggle('open')">
+      <div class="agent-card-header" style="cursor:default;">
         <div class="agent-avatar" style="background:${a.color}22;border:1px solid ${a.color}44;">
           <span>${a.emoji}</span>
         </div>
-        <span style="font-weight:700;font-size:12px;flex:1;">${escHtml(a.name)}</span>
-        <span style="font-size:9px;font-weight:700;letter-spacing:0.06em;padding:2px 6px;border-radius:2px;${a.role === 'orchestrator' ? 'background:#1e293b;color:var(--blue)' : 'background:#1a1a1a;color:var(--text3)'};">${(a.role||'worker').toUpperCase()}</span>
-        <span style="font-size:10px;color:var(--text3);margin-left:4px;">▾</span>
-      </div>
-      <div class="agent-card-body">
-        <div class="form-field">
-          <div class="form-label">Name</div>
-          <input class="form-input" id="ae-name-${a.id}" value="${escHtml(a.name)}" style="font-size:11px;">
+        <div style="flex:1;min-width:0;">
+          <div style="font-weight:700;font-size:12px;">${escHtml(a.name)}</div>
+          <div style="font-size:9px;color:var(--text3);margin-top:2px;">${restrictBadges || 'все инструменты · все файлы'}</div>
         </div>
-        <div style="display:flex;gap:8px;">
-          <div class="form-field" style="flex:1;">
-            <div class="form-label">Emoji</div>
-            <input class="form-input" id="ae-emoji-${a.id}" value="${a.emoji}" style="font-size:16px;width:60px;">
-          </div>
-          <div class="form-field" style="flex:1;">
-            <div class="form-label">Color</div>
-            <input type="color" id="ae-color-${a.id}" value="${a.color}" style="width:50px;height:32px;border:1px solid var(--border);border-radius:2px;background:var(--bg2);cursor:pointer;">
-          </div>
-          <div class="form-field" style="flex:1;">
-            <div class="form-label">Role</div>
-            <select class="form-input" id="ae-role-${a.id}" style="font-size:11px;height:32px;">
-              <option value="worker" ${(a.role||'worker')==='worker'?'selected':''}>Worker</option>
-              <option value="orchestrator" ${a.role==='orchestrator'?'selected':''}>Orchestrator</option>
-            </select>
-          </div>
-        </div>
-        <div class="form-field">
-          <div class="form-label">System Prompt / Identity</div>
-          <textarea class="form-input" id="ae-prompt-${a.id}" rows="4" style="font-size:11px;">${escHtml(a.system_prompt)}</textarea>
-        </div>
-        <div style="display:flex;gap:6px;">
-          <button class="btn" style="height:28px;padding:0 12px;font-size:10px;" onclick="saveAgent(${a.id})">SAVE</button>
-          <button class="btn btn-ghost btn-red" style="height:28px;padding:0 10px;font-size:10px;border-color:var(--red);color:var(--red);background:transparent;" onclick="deleteAgent(${a.id})">DELETE</button>
-        </div>
+        <span style="font-size:9px;font-weight:700;letter-spacing:0.06em;padding:2px 6px;border-radius:2px;margin-right:6px;${a.role === 'orchestrator' ? 'background:#1e293b;color:var(--blue)' : 'background:#1a1a1a;color:var(--text3)'};">${(a.role||'worker').toUpperCase()}</span>
+        <button class="btn btn-ghost" style="height:26px;padding:0 10px;font-size:10px;" onclick="openAgentEditor(${a.id})">EDIT</button>
       </div>`;
     list.appendChild(card);
   });
@@ -2385,36 +2640,170 @@ function renderAgentsPanel() {
   }
 }
 
-async function saveAgent(id) {
-  const name   = document.getElementById(`ae-name-${id}`).value.trim();
-  const emoji  = document.getElementById(`ae-emoji-${id}`).value.trim();
-  const color  = document.getElementById(`ae-color-${id}`).value;
-  const prompt = document.getElementById(`ae-prompt-${id}`).value;
-  const role   = document.getElementById(`ae-role-${id}`).value;
-  await api('PATCH', `/agents/${id}`, { name, emoji, color, system_prompt: prompt, role });
+// ── Agent Editor Modal ────────────────────────────────────────────────────────
+
+let _aeAgentId = null;
+let _allTools = [];
+
+async function loadAllTools() {
+  if (_allTools.length > 0) return;
+  try {
+    const d = await api('GET', '/agents/tools');
+    _allTools = d.tools || [];
+  } catch(e) { _allTools = []; }
+}
+
+async function openAgentEditor(agentId) {
+  await loadAllTools();
+  _aeAgentId = agentId;
+  const a = kbAgents.find(x => x.id === agentId);
+  if (!a) return;
+
+  // Header
+  const avatar = document.getElementById('ae-modal-avatar');
+  avatar.textContent = a.emoji;
+  avatar.style.background = a.color + '22';
+  avatar.style.border = `1px solid ${a.color}44`;
+  document.getElementById('ae-modal-title').textContent = a.name;
+
+  // Identity tab
+  document.getElementById('ae-name').value = a.name;
+  document.getElementById('ae-emoji').value = a.emoji;
+  document.getElementById('ae-color').value = a.color;
+  document.getElementById('ae-role').value = a.role || 'worker';
+
+  // System prompt tab
+  document.getElementById('ae-sysprompt').value = a.system_prompt || '';
+  document.getElementById('ae-prompt-preview').style.display = 'none';
+  document.getElementById('ae-preview-info').textContent = '';
+
+  // Tools tab
+  renderToolsTab(a.allowed_tools);
+
+  // Files tab
+  const paths = a.allowed_paths ? a.allowed_paths.join('\n') : '';
+  document.getElementById('ae-paths').value = paths;
+
+  // Show first tab
+  switchAeTab('identity');
+  document.getElementById('agent-editor-modal').classList.add('open');
+}
+
+function renderToolsTab(allowedTools) {
+  const container = document.getElementById('ae-tools-list');
+  container.innerHTML = '';
+  const allowed = allowedTools ? new Set(allowedTools) : null; // null = all
+  _allTools.forEach(tool => {
+    const checked = allowed === null ? true : allowed.has(tool.name);
+    const row = document.createElement('label');
+    row.style.cssText = 'display:flex;align-items:flex-start;gap:10px;padding:8px 10px;border:1px solid var(--border);border-radius:2px;cursor:pointer;user-select:none;';
+    row.innerHTML = `
+      <input type="checkbox" id="ae-tool-${tool.name}" ${checked ? 'checked' : ''} style="margin-top:2px;flex-shrink:0;accent-color:var(--amber);">
+      <div>
+        <div style="font-size:12px;font-weight:600;color:var(--text);">${tool.name}</div>
+        <div style="font-size:10px;color:var(--text3);line-height:1.5;margin-top:2px;">${escHtml(tool.description || '')}</div>
+      </div>`;
+    container.appendChild(row);
+  });
+}
+
+function switchAeTab(name) {
+  document.querySelectorAll('.ae-tab').forEach(t => {
+    const active = t.dataset.tab === name;
+    t.style.borderBottom = active ? '2px solid var(--amber)' : '2px solid transparent';
+    t.style.color = active ? 'var(--amber)' : 'var(--text2)';
+  });
+  document.querySelectorAll('.ae-tab-panel').forEach(p => {
+    p.style.display = p.id === `ae-panel-${name}` ? 'flex' : 'none';
+  });
+}
+
+document.querySelectorAll('.ae-tab').forEach(btn => {
+  btn.addEventListener('click', () => switchAeTab(btn.dataset.tab));
+});
+
+document.getElementById('ae-modal-close').addEventListener('click', () => {
+  document.getElementById('agent-editor-modal').classList.remove('open');
+});
+document.getElementById('ae-cancel-btn').addEventListener('click', () => {
+  document.getElementById('agent-editor-modal').classList.remove('open');
+});
+
+document.getElementById('ae-tools-all').addEventListener('click', () => {
+  document.querySelectorAll('#ae-tools-list input[type=checkbox]').forEach(cb => cb.checked = true);
+});
+document.getElementById('ae-tools-none').addEventListener('click', () => {
+  document.querySelectorAll('#ae-tools-list input[type=checkbox]').forEach(cb => cb.checked = false);
+});
+
+document.getElementById('ae-preview-btn').addEventListener('click', async () => {
+  const info = document.getElementById('ae-preview-info');
+  const box = document.getElementById('ae-prompt-preview');
+  info.textContent = 'Loading...';
+  box.style.display = 'none';
+  try {
+    const d = await api('GET', `/agents/${_aeAgentId}/prompt-preview`);
+    box.textContent = d.full_prompt;
+    box.style.display = 'block';
+    info.textContent = `${d.tools_count} tools · ${d.full_prompt.length} chars`;
+  } catch(e) {
+    info.textContent = 'Error: ' + e.message;
+  }
+});
+
+document.getElementById('ae-save-btn').addEventListener('click', async () => {
+  const name   = document.getElementById('ae-name').value.trim();
+  const emoji  = document.getElementById('ae-emoji').value.trim();
+  const color  = document.getElementById('ae-color').value;
+  const role   = document.getElementById('ae-role').value;
+  const prompt = document.getElementById('ae-sysprompt').value;
+
+  // Collect tools: if all checked → null (no restriction); else array of checked names
+  const allChecked = [...document.querySelectorAll('#ae-tools-list input[type=checkbox]')];
+  const checkedNames = allChecked.filter(cb => cb.checked).map(cb => cb.id.replace('ae-tool-', ''));
+  const allowedTools = checkedNames.length === allChecked.length ? null : checkedNames;
+
+  // Collect paths
+  const pathsRaw = document.getElementById('ae-paths').value.trim();
+  const allowedPaths = pathsRaw ? pathsRaw.split('\n').map(s => s.trim()).filter(Boolean) : null;
+
+  await api('PATCH', `/agents/${_aeAgentId}`, {
+    name, emoji, color, role, system_prompt: prompt,
+    allowed_tools: allowedTools,
+    allowed_paths: allowedPaths,
+  });
+
+  document.getElementById('agent-editor-modal').classList.remove('open');
   await loadKanban();
   renderAgentsPanel();
   toast('Agent saved');
-}
+});
 
-async function deleteAgent(id) {
-  if (!confirm('Delete this agent?')) return;
-  await api('DELETE', `/agents/${id}`);
+document.getElementById('ae-delete-btn').addEventListener('click', async () => {
+  if (!confirm('Delete this agent? Tasks assigned to it will lose their agent.')) return;
+  await api('DELETE', `/agents/${_aeAgentId}`);
+  document.getElementById('agent-editor-modal').classList.remove('open');
   await loadKanban();
   renderAgentsPanel();
   toast('Agent deleted');
-}
+});
 
 document.getElementById('new-agent-btn').addEventListener('click', async () => {
   const name = document.getElementById('new-agent-name').value.trim();
   if (!name) return;
   if (kbAgents.length >= 10) { toast('Max 10 agents'); return; }
   const role = document.getElementById('new-agent-role').value;
-  await api('POST', '/agents', { name, emoji: role === 'orchestrator' ? '🎯' : '🤖', color: '#' + Math.floor(Math.random()*0xffffff).toString(16).padStart(6,'0'), system_prompt: '', role });
+  const created = await api('POST', '/agents', {
+    name, emoji: role === 'orchestrator' ? '🎯' : '🤖',
+    color: '#' + Math.floor(Math.random()*0xffffff).toString(16).padStart(6,'0'),
+    system_prompt: '', role,
+  });
   document.getElementById('new-agent-name').value = '';
   await loadKanban();
   renderAgentsPanel();
   toast('Agent created');
+  // Open editor immediately
+  openAgentEditor(created.id);
 });
 
 // Close artifact modal
@@ -2429,6 +2818,107 @@ document.getElementById('artifact-modal').addEventListener('click', e => {
 document.getElementById('task-modal').addEventListener('click', e => {
   if (e.target === document.getElementById('task-modal')) {
     document.getElementById('task-modal').classList.remove('open');
+  }
+});
+
+// ── Spawn Project ────────────────────────────────────────────────────────────
+
+function openSpawnModal() {
+  document.getElementById('spawn-description').value = '';
+  const log = document.getElementById('spawn-log');
+  log.style.display = 'none';
+  log.textContent = '';
+  document.getElementById('spawn-modal-run').disabled = false;
+  document.getElementById('spawn-modal-run').textContent = '⚡ LAUNCH';
+  document.getElementById('spawn-modal').classList.add('open');
+  setTimeout(() => document.getElementById('spawn-description').focus(), 80);
+}
+
+function closeSpawnModal() {
+  document.getElementById('spawn-modal').classList.remove('open');
+}
+
+document.getElementById('kb-spawn-btn').addEventListener('click', openSpawnModal);
+document.getElementById('spawn-modal-close').addEventListener('click', closeSpawnModal);
+document.getElementById('spawn-modal-cancel').addEventListener('click', closeSpawnModal);
+document.getElementById('spawn-modal').addEventListener('click', e => {
+  if (e.target === document.getElementById('spawn-modal')) closeSpawnModal();
+});
+
+document.getElementById('spawn-modal-run').addEventListener('click', async () => {
+  const desc = document.getElementById('spawn-description').value.trim();
+  if (!desc) return;
+
+  const runBtn = document.getElementById('spawn-modal-run');
+  const log = document.getElementById('spawn-log');
+  runBtn.disabled = true;
+  runBtn.textContent = '⏳ Spawning...';
+  log.style.display = 'block';
+  log.textContent = '⚡ Запускаю спавнер...\n';
+
+  try {
+    const resp = await fetch(`${API}/spawn`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Api-Key': API_KEY },
+      body: JSON.stringify({ description: desc, stream: true }),
+    });
+
+    if (!resp.ok) {
+      log.textContent += `\n❌ Ошибка: ${resp.status} ${await resp.text()}`;
+      runBtn.disabled = false;
+      runBtn.textContent = '⚡ LAUNCH';
+      return;
+    }
+
+    const reader = resp.body.getReader();
+    const dec = new TextDecoder();
+    let buf = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      const lines = buf.split('\n');
+      buf = lines.pop();
+      for (const line of lines) {
+        if (!line.startsWith('data:')) continue;
+        try {
+          const ev = JSON.parse(line.slice(5).trim());
+          if (ev.type === 'text' && ev.text) {
+            log.textContent += ev.text;
+            log.scrollTop = log.scrollHeight;
+          } else if (ev.type === 'tool_start') {
+            log.textContent += `\n→ ${ev.name}(${JSON.stringify(ev.args || {}).slice(0, 80)})\n`;
+            log.scrollTop = log.scrollHeight;
+          } else if (ev.type === 'tool_end') {
+            const ok = ev.success ? '✓' : '✗';
+            const out = (ev.output || ev.error || '').slice(0, 120);
+            log.textContent += `  ${ok} ${out}\n`;
+            log.scrollTop = log.scrollHeight;
+          } else if (ev.type === 'done') {
+            log.textContent += '\n\n✅ Готово! Канбан обновлён.';
+            log.scrollTop = log.scrollHeight;
+          }
+        } catch (_) {}
+      }
+    }
+
+    runBtn.textContent = '✅ DONE';
+    // Switch to the newly spawned board (highest id) after a short delay
+    setTimeout(async () => {
+      const bd = await api('GET', '/kanban/boards');
+      const boards = bd.boards || [];
+      if (boards.length > 0) {
+        kbCurrentBoard = boards[boards.length - 1].id;
+      }
+      loadKanban();
+      closeSpawnModal();
+    }, 1500);
+
+  } catch (e) {
+    log.textContent += `\n❌ ${e.message}`;
+    runBtn.disabled = false;
+    runBtn.textContent = '⚡ LAUNCH';
   }
 });
 

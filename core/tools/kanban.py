@@ -1,11 +1,14 @@
-"""Kanban tools — let agents inspect and manage the kanban board."""
+"""Kanban tools — full agent workflow: list, run, verify, report."""
 
-import asyncio
+import os
+import json
 from models import ToolResult, ToolContext
 from db import (
     get_kanban_tasks, update_kanban_task, get_agents,
     create_kanban_task,
 )
+
+VALID_COLS = {"backlog", "in_progress", "review", "done", "needs_human"}
 
 TOOL_DEFINITIONS = [
     {
@@ -13,15 +16,15 @@ TOOL_DEFINITIONS = [
         "function": {
             "name": "kanban_list",
             "description": (
-                "List all kanban tasks grouped by column. "
-                "Use this to see what tasks exist and their current status."
+                "List all kanban tasks with their current column, status, and assigned agent. "
+                "Also shows available agents with their IDs and roles."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "column": {
                         "type": "string",
-                        "description": "Filter by column: backlog, in_progress, review, done. Omit for all tasks.",
+                        "description": "Filter by column: backlog, in_progress, review, done, needs_human. Omit for all.",
                     },
                 },
                 "required": [],
@@ -31,33 +34,12 @@ TOOL_DEFINITIONS = [
     {
         "type": "function",
         "function": {
-            "name": "kanban_move",
-            "description": (
-                "Move a kanban task to a different column. "
-                "Columns: backlog, in_progress, review, done. "
-                "Moving to in_progress does NOT auto-run the agent — use kanban_run for that."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "task_id": {"type": "integer", "description": "Task ID to move"},
-                    "column": {
-                        "type": "string",
-                        "description": "Target column: backlog, in_progress, review, done",
-                    },
-                },
-                "required": ["task_id", "column"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
             "name": "kanban_run",
             "description": (
-                "Run the assigned agent on a kanban task. "
-                "The task must have an agent assigned. "
-                "This starts the agent asynchronously — the task status will change to 'running'."
+                "Start the assigned agent on a kanban task. "
+                "Automatically moves the task to in_progress. "
+                "Non-blocking — agent runs in background. "
+                "Use kanban_list to check status afterwards."
             ),
             "parameters": {
                 "type": "object",
@@ -71,15 +53,106 @@ TOOL_DEFINITIONS = [
     {
         "type": "function",
         "function": {
-            "name": "kanban_update",
-            "description": "Update a kanban task's title, description, or assigned agent.",
+            "name": "kanban_read_result",
+            "description": (
+                "Read the artifact (result) produced by a worker agent after task completion. "
+                "Use this to verify quality of work before approving or requesting retry."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "task_id": {"type": "integer", "description": "Task ID to update"},
-                    "title": {"type": "string", "description": "New title (optional)"},
-                    "description": {"type": "string", "description": "New description/prompt (optional)"},
-                    "agent_id": {"type": "integer", "description": "Assign agent by ID (optional)"},
+                    "task_id": {"type": "integer", "description": "Task ID to read result for"},
+                },
+                "required": ["task_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "kanban_verify",
+            "description": (
+                "Approve or reject a completed task after reviewing its result. "
+                "approved=true → marks status='verified', stays in review (human moves to done). "
+                "approved=false → moves back to 'backlog' for retry (or 'needs_human' if retry_count exceeded). "
+                "Always provide a comment explaining your decision."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "task_id": {"type": "integer", "description": "Task ID to verify"},
+                    "approved": {"type": "boolean", "description": "True to approve, False to reject and retry"},
+                    "comment": {"type": "string", "description": "Verification feedback — required"},
+                },
+                "required": ["task_id", "approved", "comment"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "kanban_report",
+            "description": (
+                "Send a structured orchestration report via Telegram. "
+                "Call this at the end of each orchestration cycle with a summary of all tasks."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "summary": {
+                        "type": "string",
+                        "description": "Overall cycle summary (1-2 sentences)",
+                    },
+                    "results": {
+                        "type": "array",
+                        "description": "Per-task results",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "task_id":  {"type": "integer"},
+                                "title":    {"type": "string"},
+                                "status":   {"type": "string", "description": "done / failed / needs_human / skipped"},
+                                "comment":  {"type": "string", "description": "Brief result note"},
+                            },
+                            "required": ["task_id", "title", "status"],
+                        },
+                    },
+                },
+                "required": ["summary", "results"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "kanban_move",
+            "description": (
+                "Move a task to a different column manually. "
+                "Prefer kanban_run to start agents and kanban_verify to approve/reject. "
+                "Columns: backlog, in_progress, review, done, needs_human."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "task_id": {"type": "integer"},
+                    "column":  {"type": "string"},
+                },
+                "required": ["task_id", "column"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "kanban_update",
+            "description": "Update a task's title, description, or assigned agent.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "task_id":     {"type": "integer"},
+                    "title":       {"type": "string"},
+                    "description": {"type": "string"},
+                    "agent_id":    {"type": "integer"},
                 },
                 "required": ["task_id"],
             },
@@ -93,20 +166,42 @@ TOOL_DEFINITIONS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "title": {"type": "string", "description": "Task title"},
-                    "description": {"type": "string", "description": "Task description / agent prompt"},
-                    "agent_id": {"type": "integer", "description": "Assign agent by ID (optional)"},
-                    "column": {
-                        "type": "string",
-                        "description": "Initial column: backlog (default), in_progress, review, done",
-                    },
+                    "title":       {"type": "string"},
+                    "description": {"type": "string"},
+                    "agent_id":    {"type": "integer"},
+                    "column":      {"type": "string", "description": "backlog (default)"},
+                    "board_id":    {"type": "integer", "description": "kanban board id (default 1)"},
                 },
                 "required": ["title"],
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "kanban_create_agent",
+            "description": (
+                "Create a new agent (worker or orchestrator) in the system. "
+                "Use this when spawning a new specialist for a project. "
+                "Returns the new agent's id — use it with kanban_create to assign tasks."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name":          {"type": "string", "description": "Agent display name"},
+                    "emoji":         {"type": "string", "description": "Single emoji for agent avatar"},
+                    "color":         {"type": "string", "description": "Hex color, e.g. #3b82f6"},
+                    "role":          {"type": "string", "description": "worker or orchestrator"},
+                    "system_prompt": {"type": "string", "description": "Full system prompt for this agent"},
+                },
+                "required": ["name", "system_prompt"],
+            },
+        },
+    },
 ]
 
+
+# ── Formatters ────────────────────────────────────────────────────────────────
 
 def _fmt_tasks(tasks: list, column_filter: str | None = None) -> str:
     if column_filter:
@@ -114,21 +209,28 @@ def _fmt_tasks(tasks: list, column_filter: str | None = None) -> str:
     if not tasks:
         return "No tasks found."
 
+    col_order = ["backlog", "in_progress", "review", "needs_human", "done"]
     cols: dict[str, list] = {}
     for t in tasks:
         cols.setdefault(t["column"], []).append(t)
 
     lines = []
-    for col, items in cols.items():
+    for col in col_order:
+        if col not in cols:
+            continue
         lines.append(f"\n[{col.upper()}]")
-        for t in items:
+        for t in cols[col]:
             agent = f" → {t['agent_emoji']} {t['agent_name']}" if t.get("agent_name") else " → (no agent)"
-            status = f" [{t['status']}]" if t["status"] != "idle" else ""
-            lines.append(f"  #{t['id']} {t['title']}{agent}{status}")
+            status = f" [{t['status']}]" if t["status"] not in ("idle", "done") else ""
+            retry = f" retry#{t.get('retry_count',0)}" if t.get("retry_count", 0) > 0 else ""
+            has_result = " [has result]" if t.get("artifact") else ""
+            lines.append(f"  #{t['id']} {t['title']}{agent}{status}{retry}{has_result}")
             if t.get("description"):
                 lines.append(f"      {t['description'][:120]}")
     return "\n".join(lines)
 
+
+# ── Tool handlers ─────────────────────────────────────────────────────────────
 
 async def tool_kanban_list(args: dict, ctx: ToolContext) -> ToolResult:
     column = args.get("column")
@@ -137,34 +239,18 @@ async def tool_kanban_list(args: dict, ctx: ToolContext) -> ToolResult:
 
     summary = _fmt_tasks(tasks, column)
 
-    # Also list available agents
-    if agents:
-        agent_lines = "\n\nAVAILABLE AGENTS:"
-        for a in agents:
-            role = a.get("role", "worker")
-            agent_lines += f"\n  #{a['id']} {a['emoji']} {a['name']} [{role}]"
-        summary += agent_lines
+    agent_lines = "\n\nAVAILABLE AGENTS:"
+    for a in agents:
+        agent_lines += f"\n  #{a['id']} {a['emoji']} {a['name']} [{a.get('role','worker')}]"
+    summary += agent_lines
 
     return ToolResult(True, output=summary)
 
 
-async def tool_kanban_move(args: dict, ctx: ToolContext) -> ToolResult:
-    task_id = args.get("task_id")
-    column = args.get("column", "").strip()
-
-    valid_cols = {"backlog", "in_progress", "review", "done"}
-    if column not in valid_cols:
-        return ToolResult(False, error=f"Invalid column '{column}'. Valid: {', '.join(valid_cols)}")
-
-    task = update_kanban_task(task_id, column=column)
-    if not task:
-        return ToolResult(False, error=f"Task #{task_id} not found")
-
-    return ToolResult(True, output=f"Task #{task_id} '{task['title']}' moved to {column}")
-
-
 async def tool_kanban_run(args: dict, ctx: ToolContext) -> ToolResult:
-    """Trigger agent run on a task via the internal API (non-blocking)."""
+    from config import CONFIG
+    import httpx
+
     task_id = args.get("task_id")
     tasks = get_kanban_tasks()
     task = next((t for t in tasks if t["id"] == task_id), None)
@@ -175,15 +261,9 @@ async def tool_kanban_run(args: dict, ctx: ToolContext) -> ToolResult:
     if task["status"] == "running":
         return ToolResult(False, error=f"Task #{task_id} is already running")
 
-    # Import here to avoid circular imports; run_kanban_task_logic is defined in api.py
-    # Use direct DB + agent call instead
-    from config import CONFIG
-    import httpx
     try:
         url = f"http://localhost:{CONFIG.api_port}/kanban/tasks/{task_id}/run"
-        headers = {}
-        if CONFIG.api_secret:
-            headers["X-Api-Key"] = CONFIG.api_secret
+        headers = {"X-Api-Key": CONFIG.api_secret} if CONFIG.api_secret else {}
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.post(url, headers=headers)
             if resp.status_code == 200:
@@ -191,6 +271,117 @@ async def tool_kanban_run(args: dict, ctx: ToolContext) -> ToolResult:
             return ToolResult(False, error=f"Failed to start agent: {resp.text[:200]}")
     except Exception as e:
         return ToolResult(False, error=f"Request failed: {e}")
+
+
+async def tool_kanban_read_result(args: dict, ctx: ToolContext) -> ToolResult:
+    task_id = args.get("task_id")
+    tasks = get_kanban_tasks()
+    task = next((t for t in tasks if t["id"] == task_id), None)
+    if not task:
+        return ToolResult(False, error=f"Task #{task_id} not found")
+
+    artifact_path = task.get("artifact")
+    if not artifact_path:
+        return ToolResult(False, error=f"Task #{task_id} has no result yet (artifact not set)")
+
+    if not os.path.exists(artifact_path):
+        return ToolResult(False, error=f"Artifact file not found: {artifact_path}")
+
+    try:
+        with open(artifact_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        # Truncate very long artifacts for context efficiency
+        if len(content) > 6000:
+            content = content[:6000] + f"\n\n... [truncated, total {len(content)} chars]"
+        return ToolResult(True, output=f"=== Result for task #{task_id}: {task['title']} ===\n\n{content}")
+    except Exception as e:
+        return ToolResult(False, error=f"Failed to read artifact: {e}")
+
+
+async def tool_kanban_verify(args: dict, ctx: ToolContext) -> ToolResult:
+    task_id = args.get("task_id")
+    approved = args.get("approved")
+    comment = args.get("comment", "").strip()
+
+    if not comment:
+        return ToolResult(False, error="comment is required for verification")
+
+    tasks = get_kanban_tasks()
+    task = next((t for t in tasks if t["id"] == task_id), None)
+    if not task:
+        return ToolResult(False, error=f"Task #{task_id} not found")
+
+    if approved:
+        # Approved → stays in review, status=verified. Only a human can move to done.
+        update_kanban_task(task_id, column="review", status="verified")
+        return ToolResult(True, output=f"✅ Task #{task_id} '{task['title']}' APPROVED → review (awaiting human sign-off)\nComment: {comment}")
+    else:
+        retry_count = (task.get("retry_count") or 0) + 1
+        max_retries = 2
+        if retry_count > max_retries:
+            update_kanban_task(task_id, column="needs_human", status="idle")
+            return ToolResult(True, output=(
+                f"❌ Task #{task_id} '{task['title']}' REJECTED after {retry_count} retries → needs_human\n"
+                f"Comment: {comment}"
+            ))
+        else:
+            # Reset for retry — clear artifact so worker starts fresh
+            update_kanban_task(task_id, column="backlog", status="idle", artifact=None)
+            return ToolResult(True, output=(
+                f"🔄 Task #{task_id} '{task['title']}' REJECTED → backlog for retry #{retry_count}\n"
+                f"Comment: {comment}"
+            ))
+
+
+async def tool_kanban_report(args: dict, ctx: ToolContext) -> ToolResult:
+    from config import CONFIG
+    import httpx
+
+    summary = args.get("summary", "")
+    results = args.get("results", [])
+
+    if not CONFIG.bot_token or not CONFIG.owner_id:
+        return ToolResult(False, error="BOT_TOKEN or OWNER_ID not configured")
+
+    # Build formatted Telegram message
+    status_icons = {"done": "✅", "failed": "❌", "needs_human": "🙋", "skipped": "⏭", "running": "⏳"}
+    lines = [f"📋 *Отчёт оркестратора*\n\n{summary}\n"]
+    for r in results:
+        icon = status_icons.get(r.get("status", ""), "•")
+        comment = f" — {r['comment']}" if r.get("comment") else ""
+        lines.append(f"{icon} #{r['task_id']} {r['title']}{comment}")
+
+    done_count    = sum(1 for r in results if r.get("status") == "done")
+    failed_count  = sum(1 for r in results if r.get("status") in ("failed", "needs_human"))
+    skip_count    = sum(1 for r in results if r.get("status") == "skipped")
+    lines.append(f"\n*Итого:* {done_count} выполнено, {failed_count} с ошибкой, {skip_count} пропущено")
+
+    text = "\n".join(lines)
+    url = f"https://api.telegram.org/bot{CONFIG.bot_token}/sendMessage"
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.post(url, json={
+                "chat_id": CONFIG.owner_id,
+                "text": text,
+                "parse_mode": "Markdown",
+            })
+            if resp.status_code != 200:
+                # Retry plain text
+                await client.post(url, json={"chat_id": CONFIG.owner_id, "text": text})
+        return ToolResult(True, output=f"Report sent: {done_count} done, {failed_count} failed, {skip_count} skipped")
+    except Exception as e:
+        return ToolResult(False, error=f"Report send failed: {e}")
+
+
+async def tool_kanban_move(args: dict, ctx: ToolContext) -> ToolResult:
+    task_id = args.get("task_id")
+    column = args.get("column", "").strip()
+    if column not in VALID_COLS:
+        return ToolResult(False, error=f"Invalid column '{column}'. Valid: {', '.join(VALID_COLS)}")
+    task = update_kanban_task(task_id, column=column)
+    if not task:
+        return ToolResult(False, error=f"Task #{task_id} not found")
+    return ToolResult(True, output=f"Task #{task_id} '{task['title']}' moved to {column}")
 
 
 async def tool_kanban_update(args: dict, ctx: ToolContext) -> ToolResult:
@@ -211,10 +402,36 @@ async def tool_kanban_create(args: dict, ctx: ToolContext) -> ToolResult:
     description = args.get("description", "")
     agent_id = args.get("agent_id")
     column = args.get("column", "backlog")
-
-    valid_cols = {"backlog", "in_progress", "review", "done"}
-    if column not in valid_cols:
+    board_id = args.get("board_id", 1)
+    if column not in VALID_COLS:
         column = "backlog"
+    task = create_kanban_task(title, description, agent_id, column, board_id=board_id)
+    return ToolResult(True, output=f"Task #{task['id']} created: '{title}' in {column} (board #{board_id})")
 
-    task = create_kanban_task(title, description, agent_id, column)
-    return ToolResult(True, output=f"Task #{task['id']} created: '{title}' in {column}")
+
+async def tool_kanban_create_agent(args: dict, ctx: ToolContext) -> ToolResult:
+    from db import create_agent, get_agents
+    name = args.get("name", "").strip()
+    if not name:
+        return ToolResult(False, error="name is required")
+    system_prompt = args.get("system_prompt", "").strip()
+    if not system_prompt:
+        return ToolResult(False, error="system_prompt is required")
+    emoji = args.get("emoji", "🤖")
+    color = args.get("color", "#6366f1")
+    role = args.get("role", "worker")
+    if role not in ("worker", "orchestrator"):
+        role = "worker"
+
+    agents = get_agents()
+    if len(agents) >= 10:
+        return ToolResult(False, error="Maximum 10 agents reached. Delete unused agents first.")
+
+    agent = create_agent(name, color, emoji, system_prompt, role)
+    return ToolResult(
+        True,
+        output=(
+            f"Agent #{agent['id']} created: {emoji} {name} [{role}]\n"
+            f"Use agent_id={agent['id']} when calling kanban_create to assign tasks."
+        ),
+    )

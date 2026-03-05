@@ -23,6 +23,7 @@ _kanban_running: dict[int, asyncio.Task] = {}
 from db import (
     get_db, get_scheduled_tasks,
     get_agents, create_agent, update_agent, delete_agent,
+    get_kanban_boards, create_kanban_board, update_kanban_board, delete_kanban_board,
     get_kanban_tasks, create_kanban_task, update_kanban_task, delete_kanban_task,
 )
 
@@ -94,6 +95,8 @@ class AgentCreateRequest(BaseModel):
     emoji: str = "🤖"
     system_prompt: str = ""
     role: str = "worker"
+    allowed_tools: list | None = None
+    allowed_paths: list | None = None
 
 class AgentUpdateRequest(BaseModel):
     name: str | None = None
@@ -101,6 +104,16 @@ class AgentUpdateRequest(BaseModel):
     emoji: str | None = None
     system_prompt: str | None = None
     role: str | None = None
+    allowed_tools: list | None = None   # None = "don't change"; pass [] to clear (allow all)
+    allowed_paths: list | None = None
+
+class KanbanBoardCreateRequest(BaseModel):
+    name: str
+    emoji: str = "📋"
+
+class KanbanBoardUpdateRequest(BaseModel):
+    name: str | None = None
+    emoji: str | None = None
 
 class KanbanTaskCreateRequest(BaseModel):
     title: str
@@ -108,6 +121,7 @@ class KanbanTaskCreateRequest(BaseModel):
     agent_id: int | None = None
     column: str = "backlog"
     repeat_minutes: int = 0
+    board_id: int = 1
 
 class KanbanTaskUpdateRequest(BaseModel):
     title: str | None = None
@@ -120,6 +134,11 @@ class KanbanTaskUpdateRequest(BaseModel):
 class KanbanTaskMoveRequest(BaseModel):
     column: str
     position: int | None = None
+
+class SpawnProjectRequest(BaseModel):
+    description: str
+    stream: bool = False
+    board_id: int | None = None  # None = create new board
 
 
 # ── Health ────────────────────────────────────────────────────────────────────
@@ -151,14 +170,16 @@ async def chat(req: ChatRequest, _=Depends(_check_auth)):
     }
 
 
-async def _stream_agent(chat_id: int, message: str, forward: bool = False) -> AsyncGenerator[str, None]:
+async def _stream_agent(
+    chat_id: int, message: str, forward: bool = False, extra_system: str = ""
+) -> AsyncGenerator[str, None]:
     queue: asyncio.Queue = asyncio.Queue()
 
     async def on_event(event_type: str, data: dict):
         await queue.put((event_type, data))
 
     asyncio.create_task(
-        _run_and_signal(chat_id, message, on_event, queue, forward=forward)
+        _run_and_signal(chat_id, message, on_event, queue, forward=forward, extra_system=extra_system)
     )
 
     while True:
@@ -170,9 +191,9 @@ async def _stream_agent(chat_id: int, message: str, forward: bool = False) -> As
         yield f"data: {json.dumps({'type': event_type, **data}, ensure_ascii=False)}\n\n"
 
 
-async def _run_and_signal(chat_id, message, on_event, queue, forward=False):
+async def _run_and_signal(chat_id, message, on_event, queue, forward=False, extra_system=""):
     try:
-        result = await run_agent(chat_id, message, on_event=on_event)
+        result = await run_agent(chat_id, message, on_event=on_event, extra_system=extra_system)
         if forward and CONFIG.bot_token and CONFIG.owner_id:
             asyncio.create_task(_forward_to_telegram(result.text))
     finally:
@@ -492,7 +513,9 @@ async def create_agent_endpoint(req: AgentCreateRequest, _=Depends(_check_auth))
 
 @app.patch("/agents/{agent_id}")
 async def update_agent_endpoint(agent_id: int, req: AgentUpdateRequest, _=Depends(_check_auth)):
-    updated = update_agent(agent_id, **req.model_dump(exclude_none=True))
+    # Use exclude_unset so we can tell the difference between "not sent" vs "sent as null"
+    fields = req.model_dump(exclude_unset=True)
+    updated = update_agent(agent_id, **fields)
     if not updated:
         raise HTTPException(status_code=404, detail="Agent not found")
     return updated
@@ -504,16 +527,106 @@ async def delete_agent_endpoint(agent_id: int, _=Depends(_check_auth)):
     return {"status": "deleted"}
 
 
-# ── Kanban ────────────────────────────────────────────────────────────────────
+@app.get("/agents/tools")
+async def list_all_tools(_=Depends(_check_auth)):
+    """Return all available tool names with descriptions."""
+    from tools import get_tool_definitions
+    defs = get_tool_definitions()
+    return {"tools": [
+        {"name": t["function"]["name"], "description": t["function"].get("description", "")}
+        for t in defs
+    ]}
+
+
+@app.get("/agents/{agent_id}/prompt-preview")
+async def agent_prompt_preview(agent_id: int, _=Depends(_check_auth)):
+    """Return the full assembled system prompt that this agent will see."""
+    agents = get_agents()
+    agent = next((a for a in agents if a["id"] == agent_id), None)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    from agent.prompt import load_system_prompt, format_system_prompt
+    from agent.skills import load_skills
+    from tools import get_tool_definitions
+
+    tool_defs = get_tool_definitions()
+    allowed = agent.get("allowed_tools")
+    if allowed:
+        allowed_set = set(allowed)
+        tool_defs = [t for t in tool_defs if t["function"]["name"] in allowed_set]
+
+    tools_list = "\n".join(
+        f"- {t['function']['name']}: {t['function'].get('description', '')}"
+        for t in tool_defs
+    )
+    skills_list = load_skills(CONFIG.workspace)
+    template = load_system_prompt()
+    base_prompt = format_system_prompt(template, cwd=CONFIG.workspace, tools_list=tools_list, skills_list=skills_list)
+
+    extra_parts = []
+    if agent.get("name"):
+        extra_parts.append(f"Your name: {agent['name']} {agent.get('emoji', '')}")
+    if agent.get("system_prompt"):
+        extra_parts.append(agent["system_prompt"])
+    if CONFIG.owner_id:
+        extra_parts.append(f"Owner Telegram ID: {CONFIG.owner_id}")
+    if agent.get("allowed_paths"):
+        extra_parts.append(f"Allowed file paths: {', '.join(agent['allowed_paths'])}")
+
+    extra_system = "\n".join(extra_parts)
+    full_prompt = (extra_system + "\n\n---\n\n" + base_prompt) if extra_system else base_prompt
+    full_prompt += f"\n\nWorkspace: {CONFIG.workspace}\n\nYou are a focused task agent. Complete the assigned task directly."
+
+    return {
+        "full_prompt": full_prompt,
+        "agent_section": extra_system,
+        "base_section_length": len(base_prompt),
+        "tools_count": len(tool_defs),
+    }
+
+
+# ── Kanban boards ─────────────────────────────────────────────────────────────
+
+@app.get("/kanban/boards")
+async def list_boards(_=Depends(_check_auth)):
+    return {"boards": get_kanban_boards()}
+
+
+@app.post("/kanban/boards")
+async def create_board(req: KanbanBoardCreateRequest, _=Depends(_check_auth)):
+    return create_kanban_board(req.name, req.emoji)
+
+
+@app.patch("/kanban/boards/{board_id}")
+async def update_board(board_id: int, req: KanbanBoardUpdateRequest, _=Depends(_check_auth)):
+    board = update_kanban_board(board_id, req.name, req.emoji)
+    if not board:
+        raise HTTPException(status_code=404, detail="Board not found")
+    return board
+
+
+@app.delete("/kanban/boards/{board_id}")
+async def delete_board(board_id: int, _=Depends(_check_auth)):
+    if board_id == 1:
+        raise HTTPException(status_code=400, detail="Cannot delete the default board")
+    try:
+        delete_kanban_board(board_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"status": "deleted"}
+
+
+# ── Kanban tasks ───────────────────────────────────────────────────────────────
 
 @app.get("/kanban")
-async def list_kanban(_=Depends(_check_auth)):
-    return {"tasks": get_kanban_tasks()}
+async def list_kanban(board_id: int = Query(default=1), _=Depends(_check_auth)):
+    return {"tasks": get_kanban_tasks(board_id)}
 
 
 @app.post("/kanban/tasks")
 async def create_kanban_task_endpoint(req: KanbanTaskCreateRequest, _=Depends(_check_auth)):
-    task = create_kanban_task(req.title, req.description, req.agent_id, req.column, req.repeat_minutes)
+    task = create_kanban_task(req.title, req.description, req.agent_id, req.column, req.repeat_minutes, req.board_id)
     return task
 
 
@@ -565,12 +678,64 @@ async def run_kanban_task(task_id: int, _=Depends(_check_auth)):
     task_prompt = f"Task: {task['title']}\n\n{task['description']}".strip()
     repeat_minutes = task.get("repeat_minutes", 0) or 0
 
+    # Resolve agent restrictions from DB
+    import json as _json
+    _raw_tools = task.get("agent_allowed_tools")
+    _raw_paths = task.get("agent_allowed_paths")
+    agent_allowed_tools = _json.loads(_raw_tools) if isinstance(_raw_tools, str) else _raw_tools
+    agent_allowed_paths = _json.loads(_raw_paths) if isinstance(_raw_paths, str) else _raw_paths
+
+    # Human-readable labels for common tools
+    _TOOL_LABELS = {
+        "search_web": "🔍 поиск",
+        "fetch_page": "🌐 читаю страницу",
+        "read_file": "📄 читаю файл",
+        "write_file": "💾 пишу файл",
+        "list_files": "📁 список файлов",
+        "delete_file": "🗑 удаляю файл",
+        "kanban_list": "📋 смотрю доску",
+        "kanban_run": "▶ запускаю задачу",
+        "kanban_verify": "✅ верифицирую",
+        "kanban_report": "📊 отчёт",
+        "kanban_read_result": "📖 читаю результат",
+        "kanban_create": "➕ создаю задачу",
+        "kanban_create_agent": "🤖 создаю агента",
+        "telegram_notify": "💬 уведомление",
+        "python_eval": "🐍 запускаю код",
+        "shell_exec": "⚡ выполняю команду",
+    }
+
+    async def _on_kanban_event(event_type: str, data: dict):
+        if event_type == "tool_start":
+            name = data.get("name", "")
+            label = _TOOL_LABELS.get(name, f"🔧 {name}")
+            # Add key arg for context (e.g. filename or query)
+            args = data.get("args", {})
+            detail = (
+                args.get("query") or args.get("path") or args.get("url")
+                or args.get("task_id") or args.get("name") or ""
+            )
+            if detail:
+                label += f": {str(detail)[:40]}"
+            update_kanban_task(task_id, last_action=label)
+        elif event_type == "tool_done":
+            # Show brief success/fail hint
+            success = data.get("success", True)
+            name = data.get("name", "")
+            base = _TOOL_LABELS.get(name, f"🔧 {name}")
+            update_kanban_task(task_id, last_action=base + (" ✓" if success else " ✗"))
+
     async def _run():
         try:
             # Fresh session per run — clear history so old runs don't bleed in
             chat_id = -(task_id + 100000)
             sessions.clear(chat_id)
-            result = await run_agent(chat_id, task_prompt, task_mode=True, extra_system=extra_system)
+            update_kanban_task(task_id, last_action="🤔 думаю...")
+            result = await run_agent(
+                chat_id, task_prompt, task_mode=True, extra_system=extra_system,
+                allowed_tools=agent_allowed_tools, allowed_paths=agent_allowed_paths,
+                on_event=_on_kanban_event,
+            )
             artifact_md = f"# {task['title']}\n\n{result.text}\n"
             artifact_filename = f"task_{task_id}_{task['title'][:30].replace(' ', '_').lower()}.md"
             artifact_path = os.path.join(CONFIG.workspace, "artifacts", artifact_filename)
@@ -579,7 +744,7 @@ async def run_kanban_task(task_id: int, _=Depends(_check_auth)):
                 f.write(artifact_md)
             # If repeat is set — go back to backlog; otherwise move to review
             if repeat_minutes > 0:
-                update_kanban_task(task_id, column="backlog", status="idle", artifact=artifact_path)
+                update_kanban_task(task_id, column="backlog", status="idle", artifact=artifact_path, last_action=None)
                 core_logger.info(f"Kanban task {task_id} will repeat in {repeat_minutes}m")
                 await asyncio.sleep(repeat_minutes * 60)
                 # Re-trigger via internal HTTP so the full run path is reused
@@ -592,13 +757,13 @@ async def run_kanban_task(task_id: int, _=Depends(_check_auth)):
                 except Exception as e:
                     core_logger.warning(f"Repeat trigger failed for task {task_id}: {e}")
             else:
-                update_kanban_task(task_id, column="review", status="done", artifact=artifact_path)
+                update_kanban_task(task_id, column="review", status="done", artifact=artifact_path, last_action=None)
         except asyncio.CancelledError:
             core_logger.info(f"Kanban task {task_id} cancelled")
-            update_kanban_task(task_id, status="idle", column="backlog")
+            update_kanban_task(task_id, status="idle", column="backlog", last_action=None)
         except Exception as e:
             core_logger.error(f"Kanban task {task_id} run failed: {e}")
-            update_kanban_task(task_id, status="error", column="backlog")
+            update_kanban_task(task_id, status="error", column="backlog", last_action=None)
         finally:
             _kanban_running.pop(task_id, None)
 
@@ -633,3 +798,51 @@ async def get_kanban_artifact(task_id: int, _=Depends(_check_auth)):
     except Exception:
         # Return stored artifact text if file missing
         return {"content": task.get("artifact", ""), "path": None}
+
+
+# ── Spawn project ──────────────────────────────────────────────────────────────
+
+_SPAWNER_SYSTEM = """\
+Ты — спавнер проектов. Получаешь описание задачи/проекта и должен за один ответ:
+
+1. ПРИДУМАТЬ команду: 2-4 агента-воркера с узкой специализацией + 1 оркестратор
+2. СОЗДАТЬ каждого агента через kanban_create_agent (name, emoji, color, role, system_prompt)
+   - Воркеры: role="worker", детальный system_prompt с инструкцией ЧТО делать и КУДА сохранять (artifacts/)
+   - Оркестратор: role="orchestrator", system_prompt со стандартным алгоритмом (запуск→верификация→отчёт)
+3. СОЗДАТЬ задачи для воркеров через kanban_create (title, description, agent_id, column="backlog")
+   - Чёткое описание задачи, указать имя файла для артефакта
+4. СОЗДАТЬ задачу для оркестратора через kanban_create (repeat_minutes=5 — НЕТ у обычного kanban_create)
+   - Если нужен repeat — создай задачу, потом вручную обнови (kanban_update с repeat_minutes если надо)
+5. ЗАПУСТИТЬ оркестратор через kanban_run
+
+Выбирай осмысленные специализации под проект. Не создавай дженериков.
+После создания всего — вывести краткое резюме: кто создан, что будет делать.
+"""
+
+
+@app.post("/spawn")
+async def spawn_project(req: SpawnProjectRequest, _=Depends(_check_auth)):
+    """
+    Natural-language project spawn: one description → new board + agents + tasks + orchestrator running.
+    Streams SSE when req.stream=True.
+    """
+    # Create a new board for this project (name = first ~30 chars of description)
+    board_name = req.description[:40].strip().rstrip(".,!?") or "Project"
+    board = create_kanban_board(board_name, "🚀")
+    board_id = board["id"]
+
+    # Build spawner system prompt with the target board_id
+    spawner_system = _SPAWNER_SYSTEM + f"\n\nВАЖНО: все kanban_create вызывы должны передавать board_id={board_id}. Это новая доска специально для этого проекта."
+
+    spawn_session = -(999000 + board_id)  # unique session per board
+
+    if req.stream:
+        return StreamingResponse(
+            _stream_agent(spawn_session, req.description, forward=False, extra_system=spawner_system),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+            background=None,
+        )
+
+    result = await run_agent(spawn_session, req.description, extra_system=spawner_system)
+    return {"text": result.text, "tool_events": result.tool_events, "board_id": board_id}

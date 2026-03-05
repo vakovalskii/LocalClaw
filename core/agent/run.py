@@ -24,6 +24,8 @@ async def run_agent(
     on_event=None,
     task_mode: bool = False,
     extra_system: str = "",
+    allowed_tools: list | None = None,
+    allowed_paths: list | None = None,
 ) -> AgentResult:
     """
     Run the ReAct agent loop for a single message.
@@ -53,8 +55,11 @@ async def run_agent(
         workspace_info = await inject_daily_memory(cwd, workspace_info)
         workspace_info, _ = await inject_memory(cwd, workspace_info)
 
-    # Load skills and tools
+    # Load skills and tools (filter by allowed_tools if restricted)
     tool_definitions = get_tool_definitions()
+    if allowed_tools is not None:
+        allowed_set = set(allowed_tools)
+        tool_definitions = [t for t in tool_definitions if t["function"]["name"] in allowed_set]
     tools_list = "\n".join(
         f"- {t['function']['name']}: {t['function'].get('description', '')}"
         for t in tool_definitions
@@ -159,7 +164,7 @@ async def run_agent(
                 await on_event("tool_start", {"name": tool_name, "args": args})
             log_event(session_key, "tool_call", {"name": tool_name, "args": args})
 
-            ctx = ToolContext(cwd=cwd, session_id=session_key, history_ref=messages)
+            ctx = ToolContext(cwd=cwd, session_id=session_key, history_ref=messages, allowed_paths=allowed_paths)
             result = await execute_tool(tool_name, args, ctx)
 
             event_data = {

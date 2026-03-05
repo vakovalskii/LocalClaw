@@ -7,8 +7,9 @@ from logger import tool_logger
 from models import ToolResult, ToolContext
 
 
-def _safe_path(cwd: str, path: str) -> str | None:
-    """Resolve path relative to cwd, block traversal outside workspace."""
+def _safe_path(cwd: str, path: str, allowed_paths: list | None = None) -> str | None:
+    """Resolve path relative to cwd, block traversal outside workspace.
+    If allowed_paths is set, also enforce it (list of prefix subdirs relative to workspace)."""
     if os.path.isabs(path):
         resolved = os.path.realpath(path)
     else:
@@ -17,14 +18,23 @@ def _safe_path(cwd: str, path: str) -> str | None:
     workspace = os.path.realpath(CONFIG.workspace)
     if not resolved.startswith(workspace):
         return None
+
+    if allowed_paths is not None:
+        # Check resolved path starts with one of the allowed prefixes
+        for prefix in allowed_paths:
+            allowed_abs = os.path.realpath(os.path.join(workspace, prefix.lstrip("/")))
+            if resolved.startswith(allowed_abs):
+                return resolved
+        return None  # not in any allowed prefix
+
     return resolved
 
 
 async def tool_read_file(args: dict, ctx: ToolContext) -> ToolResult:
     path = args.get("path", "")
-    safe = _safe_path(ctx.cwd, path)
+    safe = _safe_path(ctx.cwd, path, ctx.allowed_paths)
     if not safe:
-        return ToolResult(False, error="🚫 Path outside workspace")
+        return ToolResult(False, error="🚫 Path outside workspace or not in allowed paths")
     if not os.path.exists(safe):
         return ToolResult(False, error=f"File not found: {path}")
     if os.path.isdir(safe):
@@ -43,9 +53,9 @@ async def tool_read_file(args: dict, ctx: ToolContext) -> ToolResult:
 async def tool_write_file(args: dict, ctx: ToolContext) -> ToolResult:
     path = args.get("path", "")
     content = args.get("content", "")
-    safe = _safe_path(ctx.cwd, path)
+    safe = _safe_path(ctx.cwd, path, ctx.allowed_paths)
     if not safe:
-        return ToolResult(False, error="🚫 Path outside workspace")
+        return ToolResult(False, error="🚫 Path outside workspace or not in allowed paths")
 
     try:
         os.makedirs(os.path.dirname(safe), exist_ok=True)
@@ -59,9 +69,9 @@ async def tool_write_file(args: dict, ctx: ToolContext) -> ToolResult:
 
 async def tool_list_files(args: dict, ctx: ToolContext) -> ToolResult:
     path = args.get("path", ".")
-    safe = _safe_path(ctx.cwd, path)
+    safe = _safe_path(ctx.cwd, path, ctx.allowed_paths)
     if not safe:
-        return ToolResult(False, error="🚫 Path outside workspace")
+        return ToolResult(False, error="🚫 Path outside workspace or not in allowed paths")
     if not os.path.exists(safe):
         return ToolResult(False, error=f"Directory not found: {path}")
 
@@ -81,9 +91,9 @@ async def tool_list_files(args: dict, ctx: ToolContext) -> ToolResult:
 
 async def tool_delete_file(args: dict, ctx: ToolContext) -> ToolResult:
     path = args.get("path", "")
-    safe = _safe_path(ctx.cwd, path)
+    safe = _safe_path(ctx.cwd, path, ctx.allowed_paths)
     if not safe:
-        return ToolResult(False, error="🚫 Path outside workspace")
+        return ToolResult(False, error="🚫 Path outside workspace or not in allowed paths")
     if not os.path.exists(safe):
         return ToolResult(False, error=f"Not found: {path}")
 
