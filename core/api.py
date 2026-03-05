@@ -29,6 +29,18 @@ from db import (
 
 app = FastAPI(title="LocalTaskClaw Core", version="0.1.0")
 
+
+@app.on_event("startup")
+async def _on_startup():
+    from db import init_db
+    init_db()
+    try:
+        from tools.mcp import init_mcp
+        await init_mcp(CONFIG.workspace)
+    except Exception as e:
+        core_logger.warning(f"MCP init skipped: {e}")
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],

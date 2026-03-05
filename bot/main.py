@@ -11,6 +11,16 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 from telegram.constants import ChatAction
 from telegram.error import BadRequest
 
+# Load env file if ENV_FILE is set (LaunchAgent / systemd pass path this way)
+_env_file = os.environ.get("ENV_FILE", "")
+if _env_file and os.path.isfile(_env_file):
+    with open(_env_file) as _f:
+        for _line in _f:
+            _line = _line.strip()
+            if _line and not _line.startswith("#") and "=" in _line:
+                _k, _, _v = _line.partition("=")
+                os.environ.setdefault(_k.strip(), _v.strip())
+
 CORE_URL = os.environ.get("CORE_URL", "http://core:8000")
 API_SECRET = os.environ.get("API_SECRET", "")
 OWNER_ID = int(os.environ.get("OWNER_ID", "0"))

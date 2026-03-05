@@ -3,6 +3,16 @@
 import os
 from dataclasses import dataclass, field
 
+# Load env file if ENV_FILE is set (LaunchAgent / systemd pass path this way)
+_env_file = os.environ.get("ENV_FILE", "")
+if _env_file and os.path.isfile(_env_file):
+    with open(_env_file) as _f:
+        for _line in _f:
+            _line = _line.strip()
+            if _line and not _line.startswith("#") and "=" in _line:
+                _k, _, _v = _line.partition("=")
+                os.environ.setdefault(_k.strip(), _v.strip())
+
 
 def _env(key: str, default: str = "") -> str:
     return os.environ.get(key, default)

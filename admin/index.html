@@ -490,10 +490,11 @@
     border-radius: 2px;
     color: var(--text);
     font-family: var(--font);
-    font-size: 12px;
-    padding: 8px 10px;
+    font-size: 13px;
+    padding: 10px 14px;
     outline: none;
     transition: border-color 0.15s;
+    width: 100%;
   }
 
   .form-input:focus { border-color: var(--amber); }
@@ -569,7 +570,7 @@
   }
 
   /* ── Settings ── */
-  #settings-page { padding: 32px; overflow-y: auto; max-width: 700px; gap: 24px; }
+  #settings-page { padding: 32px; overflow-y: auto; max-width: 960px; gap: 24px; }
 
   .settings-section { display: flex; flex-direction: column; gap: 12px; }
 
@@ -578,11 +579,11 @@
   .settings-row {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 16px;
   }
 
-  .settings-row .form-label { width: 160px; flex-shrink: 0; }
-  .settings-row .form-input { flex: 1; }
+  .settings-row .form-label { width: 200px; flex-shrink: 0; font-size: 11px; }
+  .settings-row .form-input { flex: 1; min-width: 0; }
 
   /* ── Status bar ── */
   #statusbar {
