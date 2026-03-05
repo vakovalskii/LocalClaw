@@ -706,12 +706,15 @@
     border: 1px solid var(--border);
     border-radius: 3px;
     padding: 10px 12px;
-    cursor: default;
-    transition: border-color 0.15s;
+    cursor: grab;
+    transition: border-color 0.15s, opacity 0.15s;
     position: relative;
   }
 
   .kb-card:hover { border-color: var(--border2); }
+  .kb-card.dragging { opacity: 0.4; cursor: grabbing; }
+  .kb-col.drag-over { background: var(--bg2); outline: 2px dashed var(--amber); outline-offset: -4px; }
+  .kb-cards { transition: background 0.15s; }
 
   .kb-card-top {
     display: flex;
@@ -2080,12 +2083,32 @@ function renderKanban() {
     const tasks = byCol[col] || [];
     document.getElementById('cnt-' + col).textContent = tasks.length;
     const container = document.getElementById('col-' + col);
+    const colEl = container.closest('.kb-col');
+
     if (tasks.length === 0) {
       container.innerHTML = '<div style="text-align:center;color:var(--text3);font-size:10px;padding:24px 8px;letter-spacing:0.06em;">EMPTY</div>';
-      return;
+    } else {
+      tasks.forEach(task => container.appendChild(buildCard(task, col)));
     }
-    tasks.forEach(task => {
-      container.appendChild(buildCard(task, col));
+
+    // Drop zone
+    colEl.addEventListener('dragover', e => { e.preventDefault(); colEl.classList.add('drag-over'); });
+    colEl.addEventListener('dragleave', e => { if (!colEl.contains(e.relatedTarget)) colEl.classList.remove('drag-over'); });
+    colEl.addEventListener('drop', async e => {
+      e.preventDefault();
+      colEl.classList.remove('drag-over');
+      const taskId = parseInt(e.dataTransfer.getData('text/plain'));
+      if (!taskId) return;
+      const task = kbTasks.find(t => t.id === taskId);
+      if (!task || task.column === col) return;
+
+      if (col === 'in_progress' && task.status !== 'running') {
+        // Drop to In Progress → auto-run agent
+        await api('POST', `/kanban/tasks/${taskId}/move`, { column: col });
+        await runKbTask(taskId);
+      } else {
+        await moveTask(taskId, col);
+      }
     });
   });
 }
@@ -2094,6 +2117,14 @@ function buildCard(task, col) {
   const card = document.createElement('div');
   card.className = 'kb-card';
   card.dataset.id = task.id;
+  card.draggable = task.status !== 'running';
+
+  card.addEventListener('dragstart', e => {
+    e.dataTransfer.setData('text/plain', task.id);
+    e.dataTransfer.effectAllowed = 'move';
+    setTimeout(() => card.classList.add('dragging'), 0);
+  });
+  card.addEventListener('dragend', () => card.classList.remove('dragging'));
 
   const agentColor = task.agent_color || '#555';
   const agentEmoji = task.agent_emoji || '';
