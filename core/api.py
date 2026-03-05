@@ -559,8 +559,9 @@ async def run_kanban_task(task_id: int, _=Depends(_check_auth)):
 
     async def _run():
         try:
-            # Use a dedicated chat_id per task to isolate session
+            # Fresh session per run — clear history so old runs don't bleed in
             chat_id = -(task_id + 100000)
+            sessions.clear(chat_id)
             result = await run_agent(chat_id, task_prompt, task_mode=True, extra_system=extra_system)
             artifact_md = f"# {task['title']}\n\n{result.text}\n"
             # Save .md artifact to workspace
