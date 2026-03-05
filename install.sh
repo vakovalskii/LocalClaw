@@ -468,7 +468,7 @@ services:
     container_name: localtaskclaw-core
     restart: unless-stopped
     ports:
-      - "8000:8000"
+      - "11387:8000"
     environment:
       - MODEL=${MODEL_NAME}
       - LLM_BASE_URL=${LLM_BASE_URL}
@@ -538,7 +538,7 @@ COMPOSE
   spinner_start "Жду готовности..."
   HEALTHY=false
   for i in $(seq 1 30); do
-    if curl -s --max-time 2 http://localhost:8000/health &>/dev/null; then
+    if curl -s --max-time 2 http://localhost:11387/health &>/dev/null; then
       HEALTHY=true; break
     fi
     sleep 2
@@ -546,7 +546,7 @@ COMPOSE
   spinner_stop
   [[ "$HEALTHY" == "true" ]] && success "Сервис готов!" || warn "Сервис ещё загружается..."
 
-  ADMIN_URL="http://localhost:8000/admin"
+  ADMIN_URL="http://localhost:11387/admin"
   MANAGE_INFO="Логи:    ${BOLD}$COMPOSE_CMD -f $INSTALL_DIR/docker-compose.yml logs -f${NC}
 Стоп:    ${BOLD}$COMPOSE_CMD -f $INSTALL_DIR/docker-compose.yml down${NC}
 Обновить: ${BOLD}$COMPOSE_CMD -f $INSTALL_DIR/docker-compose.yml pull && $COMPOSE_CMD -f $INSTALL_DIR/docker-compose.yml up -d${NC}"
@@ -630,14 +630,14 @@ BRAVE_API_KEY=${BRAVE_KEY:-}
 MAX_ITERATIONS=20
 COMMAND_TIMEOUT=60
 MAX_TOKENS=4096
-API_PORT=8000
+API_PORT=11387
 ENV
   chmod 600 "$SECRETS_DIR/core.env"
   success "Конфиг: ${BOLD}$SECRETS_DIR/core.env${NC}"
 
   # Write bot config
   cat > "$SECRETS_DIR/bot.env" << ENV
-CORE_URL=http://localhost:8000
+CORE_URL=http://localhost:11387
 BOT_TOKEN=${TG_TOKEN}
 API_SECRET=${API_SECRET}
 OWNER_ID=${OWNER_ID}
@@ -661,7 +661,7 @@ ENV
     <string>-m</string><string>uvicorn</string>
     <string>api:app</string>
     <string>--host</string><string>0.0.0.0</string>
-    <string>--port</string><string>8000</string>
+    <string>--port</string><string>11387</string>
   </array>
   <key>WorkingDirectory</key>   <string>${CODE_DIR}/core</string>
   <key>EnvironmentVariables</key>
@@ -720,7 +720,7 @@ After=network.target
 [Service]
 Type=simple
 WorkingDirectory=${CODE_DIR}/core
-ExecStart=${VENV_DIR}/bin/python -m uvicorn api:app --host 0.0.0.0 --port 8000
+ExecStart=${VENV_DIR}/bin/python -m uvicorn api:app --host 0.0.0.0 --port 11387
 Environment=ENV_FILE=${SECRETS_DIR}/core.env
 Restart=always
 RestartSec=5
@@ -764,7 +764,7 @@ SVC
     sleep 1
     cd "$CODE_DIR/core"
     ENV_FILE="$SECRETS_DIR/core.env" \
-      nohup "$VENV_DIR/bin/python" -m uvicorn api:app --host 0.0.0.0 --port 8000 \
+      nohup "$VENV_DIR/bin/python" -m uvicorn api:app --host 0.0.0.0 --port 11387 \
       > /tmp/localtaskclaw-core.log 2>&1 &
     cd "$CODE_DIR/bot"
     ENV_FILE="$SECRETS_DIR/bot.env" \
@@ -777,7 +777,7 @@ SVC
   spinner_start "Жду готовности сервиса..."
   HEALTHY=false
   for i in $(seq 1 20); do
-    if curl -s --max-time 2 http://localhost:8000/health &>/dev/null; then
+    if curl -s --max-time 2 http://localhost:11387/health &>/dev/null; then
       HEALTHY=true; break
     fi
     sleep 2
@@ -785,7 +785,7 @@ SVC
   spinner_stop
   [[ "$HEALTHY" == "true" ]] && success "Core готов!" || warn "Core ещё загружается (см. /tmp/localtaskclaw-core.log)"
 
-  ADMIN_URL="http://localhost:8000/admin"
+  ADMIN_URL="http://localhost:11387/admin"
 
   if [[ "$(uname -s)" == "Darwin" ]]; then
     MANAGE_INFO="Логи core: ${BOLD}tail -f /tmp/localtaskclaw-core.log${NC}
@@ -823,4 +823,23 @@ echo -e "$MANAGE_INFO"
 echo ""
 info "Открой в браузере: ${BOLD}${ADMIN_URL}${NC}"
 info "Используй API Secret как пароль для входа в UI"
+echo ""
+echo -e "${BOLD}${CYAN}  Полезные команды:${NC}"
+if [[ "$MODE_NAME" == "docker" ]]; then
+  echo -e "  Статус:   ${BOLD}$COMPOSE_CMD -f $INSTALL_DIR/docker-compose.yml ps${NC}"
+  echo -e "  Логи:     ${BOLD}$COMPOSE_CMD -f $INSTALL_DIR/docker-compose.yml logs -f${NC}"
+  echo -e "  Стоп:     ${BOLD}$COMPOSE_CMD -f $INSTALL_DIR/docker-compose.yml down${NC}"
+  echo -e "  Старт:    ${BOLD}$COMPOSE_CMD -f $INSTALL_DIR/docker-compose.yml up -d${NC}"
+  echo -e "  Обновить: ${BOLD}$COMPOSE_CMD -f $INSTALL_DIR/docker-compose.yml pull && $COMPOSE_CMD -f $INSTALL_DIR/docker-compose.yml up -d${NC}"
+elif [[ "$(uname -s)" == "Darwin" ]]; then
+  echo -e "  Стоп:     ${BOLD}launchctl unload ~/Library/LaunchAgents/io.localtaskclaw.*.plist${NC}"
+  echo -e "  Старт:    ${BOLD}launchctl load ~/Library/LaunchAgents/io.localtaskclaw.*.plist${NC}"
+  echo -e "  Логи:     ${BOLD}tail -f /tmp/localtaskclaw-core.log${NC}"
+else
+  echo -e "  Стоп:     ${BOLD}systemctl --user stop localtaskclaw-core localtaskclaw-bot${NC}"
+  echo -e "  Старт:    ${BOLD}systemctl --user start localtaskclaw-core localtaskclaw-bot${NC}"
+  echo -e "  Статус:   ${BOLD}systemctl --user status localtaskclaw-core localtaskclaw-bot${NC}"
+  echo -e "  Логи:     ${BOLD}tail -f /tmp/localtaskclaw-core.log${NC}"
+fi
+echo -e "  Admin UI: ${BOLD}${ADMIN_URL}${NC}  (пароль: API Secret выше)"
 echo ""
