@@ -78,7 +78,7 @@ export default function Kanban() {
     if (!activeBoard) return;
     try {
       const d = await api<{ tasks: KanbanTask[] }>('GET', `/kanban/boards/${activeBoard}/tasks`);
-      const snap = JSON.stringify(d.tasks.map(t => ({ id: t.id, status: t.status, column: t.column, last_action: t.last_action })));
+      const snap = JSON.stringify(d.tasks.map(t => ({ id: t.id, status: t.status, column: t.column, last_action: t.last_action, repeat_minutes: t.repeat_minutes, title: t.title, agent_id: t.agent_id })));
       if (snap !== prevSnap.current) {
         prevSnap.current = snap;
         setTasks(d.tasks);
@@ -156,6 +156,7 @@ export default function Kanban() {
       }
       setShowTaskModal(false);
       setEditingTask(null);
+      prevSnap.current = '';
       loadTasks();
     } catch (e: any) { toast(e.message); }
   }
@@ -460,11 +461,11 @@ function TaskCard({
       <div className="flex items-center gap-1.5 mb-1">
         <span className="text-[12px] font-medium text-text leading-tight">{task.title}</span>
         {task.repeat_minutes > 0 && (
-          <span className="text-[10px] text-text3" title={`Repeats every ${task.repeat_minutes}m`}>
-            {/* recycle icon */}
-            <svg className="w-3 h-3 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-blue/15 text-blue text-[9px] flex-shrink-0" title={`Repeats every ${task.repeat_minutes}m`}>
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
+            {task.repeat_minutes}m
           </span>
         )}
       </div>
@@ -917,12 +918,65 @@ function ArtifactModal({ content, onClose }: { content: string; onClose: () => v
 
 // ─── Spawn Project Modal ──────────────────────────────────────────────────────
 
+const SPAWN_TEMPLATES = [
+  {
+    label: 'Content Pipeline',
+    text: `Create a content production team:
+
+Agents:
+- Researcher (worker): searches the web for trending topics in AI/tech, collects key facts and sources
+- Writer (worker): takes research findings and writes polished articles (500-800 words), saves as markdown
+- Editor (worker): reviews written articles for quality, clarity, and factual accuracy, writes feedback report
+- Publisher (orchestrator): runs the pipeline — dispatches researcher first, then writer, then editor. Writes a final summary report with links to all produced files
+
+Tasks:
+- "Research: AI Agents in Production" — assigned to Researcher. Search for real-world AI agent deployments in 2026, compile top 5 case studies
+- "Write: The Rise of Autonomous AI Teams" — assigned to Writer. Write an article about how AI agent teams are changing software development
+- "Edit: Review All Content" — assigned to Editor. Read all produced articles, check for errors, write review notes
+- "Run Content Pipeline" — assigned to Publisher. Orchestrate the full pipeline, write final report`,
+  },
+  {
+    label: 'Code Review Team',
+    text: `Create a code analysis team:
+
+Agents:
+- Analyst (worker): inspects workspace files, identifies code patterns, counts LOC, lists all modules
+- Security Reviewer (worker): checks code for common security issues (hardcoded secrets, injection risks, unsafe patterns)
+- Documentation Writer (worker): reads code structure and writes a project overview document with architecture description
+- Lead (orchestrator): dispatches all analysts in parallel, then writes a consolidated report
+
+Tasks:
+- "Workspace Audit" — assigned to Analyst. List all files, analyze structure, count lines of code by language, write report
+- "Security Scan" — assigned to Security Reviewer. Check all Python/JS files for security issues, write findings report
+- "Generate Project Docs" — assigned to Documentation Writer. Read key files, write a comprehensive README-style document
+- "Run Full Review" — assigned to Lead. Dispatch all review tasks, compile final quality report`,
+  },
+  {
+    label: 'Research Hub',
+    text: `Create a multi-topic research team:
+
+Agents:
+- Web Scout (worker): performs web searches, extracts key data points, saves structured findings as markdown
+- Deep Diver (worker): takes a topic and writes an in-depth analysis (800+ words) with comparisons and recommendations
+- Summarizer (worker): reads multiple research files and produces a condensed executive brief
+- Coordinator (orchestrator): dispatches research tasks, monitors progress, writes final compilation report
+
+Tasks:
+- "Research: Best Local LLMs 2026" — assigned to Web Scout. Find top 10 local-deployable LLMs, compare params/performance/license
+- "Research: MCP Protocol Ecosystem" — assigned to Web Scout. Map the MCP server ecosystem — what servers exist, what they do
+- "Analysis: Local vs Cloud AI" — assigned to Deep Diver. Write detailed comparison of local-first vs cloud AI for developers
+- "Executive Brief" — assigned to Summarizer. Read all research outputs, write a 1-page executive summary
+- "Run Research Sprint" — assigned to Coordinator. Dispatch all tasks, track completion, write final report`,
+  },
+];
+
 function SpawnModal({
   onClose, onComplete,
 }: {
   onClose: () => void;
   onComplete: (boardId: number) => void;
 }) {
+  const [showTemplates, setShowTemplates] = useState(true);
   const [description, setDescription] = useState('');
   const [streaming, setStreaming] = useState(false);
   const [log, setLog] = useState<string[]>([]);
@@ -1003,15 +1057,41 @@ function SpawnModal({
         </div>
 
         <div className="p-4 flex flex-col gap-3">
-          <Field label="Describe your project">
-            <textarea
-              className="w-full bg-bg2 border border-border text-text text-[12px] px-3 py-2 outline-none focus:border-amber/50 resize-none h-24 font-mono"
-              value={description}
-              onChange={e => setDescription(e.target.value)}
-              disabled={streaming}
-              placeholder="e.g. Build a REST API for managing inventory with CRUD endpoints..."
-            />
-          </Field>
+          {showTemplates && !streaming && !log.length && (
+            <div>
+              <div className="text-[10px] text-text3 mb-2 tracking-wide">TEMPLATES</div>
+              <div className="grid grid-cols-1 gap-1.5">
+                {SPAWN_TEMPLATES.map((t, i) => (
+                  <button
+                    key={i}
+                    className="text-left px-3 py-2 bg-bg2 border border-border rounded-sm hover:border-amber/40 hover:bg-bg3 transition-colors"
+                    onClick={() => { setDescription(t.text); setShowTemplates(false); }}
+                  >
+                    <div className="text-[11px] text-text font-medium">{t.label}</div>
+                    <div className="text-[10px] text-text3 mt-0.5 line-clamp-1">{t.text.slice(0, 80)}...</div>
+                  </button>
+                ))}
+                <button
+                  className="text-left px-3 py-1.5 text-[10px] text-text3 hover:text-text transition-colors"
+                  onClick={() => setShowTemplates(false)}
+                >
+                  or write your own...
+                </button>
+              </div>
+            </div>
+          )}
+          {!showTemplates && (
+            <Field label="Describe your project">
+              <textarea
+                className="w-full bg-bg2 border border-border text-text text-[12px] px-3 py-2 outline-none focus:border-amber/50 resize-none h-28 font-mono"
+                value={description}
+                onChange={e => setDescription(e.target.value)}
+                disabled={streaming}
+                placeholder="Describe the project: what agents to create, what tasks they should do..."
+                autoFocus
+              />
+            </Field>
+          )}
 
           {log.length > 0 && (
             <div ref={logRef} className="bg-bg2 border border-border p-3 max-h-56 overflow-y-auto">

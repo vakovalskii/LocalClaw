@@ -53,7 +53,9 @@ def get(path: str) -> dict:
 
 def post(path: str, data: dict = None) -> dict:
     r = httpx.post(f"{BASE_URL}{path}", json=data or {}, headers=HEADERS, timeout=15)
-    r.raise_for_status()
+    if not r.is_success:
+        detail = r.text[:200]
+        raise httpx.HTTPStatusError(f"{r.status_code} for {path}: {detail}", request=r.request, response=r)
     return r.json()
 
 
@@ -133,8 +135,14 @@ TEAM = {
             "1. Call kanban_list to see all tasks.\n"
             "2. For each task in backlog that has an agent_id: call kanban_run(task_id).\n"
             "3. Do NOT use kanban_move. Only use kanban_run.\n"
-            "4. After dispatching all eligible tasks, finish.\n"
-            "IMPORTANT: Use kanban_run, NOT kanban_move."
+            "4. After dispatching all eligible tasks, write a summary report using write_file.\n"
+            "   Save to workspace/orchestrator_report.md with:\n"
+            "   - Date/time of the run\n"
+            "   - List of tasks dispatched (task_id, title, assigned agent)\n"
+            "   - List of tasks skipped (no agent, already running, etc.)\n"
+            "   - Total tasks on the board by column (backlog/in_progress/review/done)\n"
+            "5. Finish after writing the report.\n"
+            "IMPORTANT: Use kanban_run to start tasks, NOT kanban_move."
         ),
     },
 }
@@ -215,12 +223,13 @@ def board(team):
         agent_name = TEAM[spec["agent_key"]]["name"]
         print(f"  [{task['id']}] {spec['title']} -> {agent_name}")
 
-    # Orchestrator task
+    # Orchestrator task (with repeat)
     orc_task = post("/kanban/tasks", {
         "title": "Run Orchestration Cycle",
-        "description": "Dispatch all backlog tasks to their assigned agents.",
+        "description": "Dispatch all backlog tasks to their assigned agents. Write summary report.",
         "agent_id": team["orchestrator"],
         "column": "backlog",
+        "repeat_minutes": 1,
     })
     task_ids["orchestrator"] = orc_task["id"]
     print(f"  [{orc_task['id']}] Orchestration Cycle -> Orchestrator")

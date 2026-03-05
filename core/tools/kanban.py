@@ -166,11 +166,12 @@ TOOL_DEFINITIONS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "title":       {"type": "string"},
-                    "description": {"type": "string"},
-                    "agent_id":    {"type": "integer"},
-                    "column":      {"type": "string", "description": "backlog (default)"},
-                    "board_id":    {"type": "integer", "description": "kanban board id (default 1)"},
+                    "title":          {"type": "string"},
+                    "description":    {"type": "string"},
+                    "agent_id":       {"type": "integer"},
+                    "column":         {"type": "string", "description": "backlog (default)"},
+                    "board_id":       {"type": "integer", "description": "kanban board id (default 1)"},
+                    "repeat_minutes": {"type": "integer", "description": "Auto-repeat interval in minutes (0 = off, default). Use for orchestrator tasks."},
                 },
                 "required": ["title"],
             },
@@ -416,10 +417,12 @@ async def tool_kanban_create(args: dict, ctx: ToolContext) -> ToolResult:
     agent_id = args.get("agent_id")
     column = args.get("column", "backlog")
     board_id = args.get("board_id", 1)
+    repeat_minutes = args.get("repeat_minutes", 0)
     if column not in VALID_COLS:
         column = "backlog"
-    task = create_kanban_task(title, description, agent_id, column, board_id=board_id)
-    return ToolResult(True, output=f"Task #{task['id']} created: '{title}' in {column} (board #{board_id})")
+    task = create_kanban_task(title, description, agent_id, column, repeat_minutes=repeat_minutes, board_id=board_id)
+    extra = f", repeat={repeat_minutes}m" if repeat_minutes else ""
+    return ToolResult(True, output=f"Task #{task['id']} created: '{title}' in {column} (board #{board_id}{extra})")
 
 
 async def tool_kanban_create_agent(args: dict, ctx: ToolContext) -> ToolResult:

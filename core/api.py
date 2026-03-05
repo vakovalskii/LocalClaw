@@ -954,12 +954,14 @@ You receive a task/project description and must produce everything in a single r
 
 1. DESIGN a team: 2-4 specialized worker agents + 1 orchestrator.
 2. CREATE each agent via kanban_create_agent (name, emoji, color, role, system_prompt).
-   - Workers: role="worker", detailed system_prompt explaining WHAT to do and WHERE to save results (artifacts/).
-   - Orchestrator: role="orchestrator", system_prompt with the standard algorithm (start → verify → report).
+   - Workers: role="worker", detailed system_prompt explaining WHAT to do and WHERE to save results.
+   - Orchestrator: role="orchestrator", system_prompt should instruct it to:
+     a) Call kanban_list to see all tasks
+     b) Call kanban_run(task_id) for each backlog task that has an agent
+     c) After dispatching, write a summary report via write_file with: tasks dispatched, tasks skipped, board state
 3. CREATE tasks for workers via kanban_create (title, description, agent_id, column="backlog").
    - Clear task description, specify the artifact filename.
-4. CREATE a task for the orchestrator via kanban_create (repeat_minutes=5 is NOT available in kanban_create).
-   - If repeat is needed, create the task first, then update it manually (kanban_update with repeat_minutes if necessary).
+4. CREATE orchestrator task via kanban_create with repeat_minutes=1 (auto-repeats every minute).
 5. START the orchestrator via kanban_run.
 
 Choose meaningful specializations for the project. Do not create generic agents.
