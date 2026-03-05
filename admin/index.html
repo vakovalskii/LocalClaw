@@ -1640,7 +1640,7 @@ function navigate(hash) {
   });
   if (page === 'chat' && !chatHistoryLoaded) loadChatHistory();
   if (page === 'sessions') loadSessions();
-  if (page === 'kanban') loadKanban();
+  if (page === 'kanban') { loadKanban(); startKbAutoPoll(); } else { stopKbAutoPoll(); }
   if (page === 'tasks') loadTasks();
   if (page === 'files') loadFiles('');
   if (page === 'logs') initLogs();
@@ -2467,7 +2467,24 @@ let kbAgents = [];
 let kbBoards = [];
 let kbCurrentBoard = 1;
 let kbNewTaskCol = 'backlog';
-let kbPollInterval = null;
+let kbAutoPoll = null;
+
+function startKbAutoPoll() {
+  if (kbAutoPoll) return;
+  kbAutoPoll = setInterval(async () => {
+    try {
+      const d = await api('GET', `/kanban?board_id=${kbCurrentBoard}`);
+      const prev = JSON.stringify(kbTasks.map(t => t.status + t.column));
+      kbTasks = d.tasks || [];
+      const curr = JSON.stringify(kbTasks.map(t => t.status + t.column));
+      if (prev !== curr) renderKanban();
+    } catch(e) {}
+  }, 3000);
+}
+
+function stopKbAutoPoll() {
+  if (kbAutoPoll) { clearInterval(kbAutoPoll); kbAutoPoll = null; }
+}
 
 async function loadKanban() {
   const [td, ad, bd] = await Promise.all([
@@ -2517,7 +2534,6 @@ function renderBoards() {
 
 async function switchBoard(boardId) {
   kbCurrentBoard = boardId;
-  if (kbPollInterval) { clearInterval(kbPollInterval); kbPollInterval = null; }
   loadKanban();
 }
 
@@ -2678,21 +2694,10 @@ async function runKbTask(taskId) {
   toast('Starting agent...');
   await api('POST', `/kanban/tasks/${taskId}/run`);
   await loadKanban();
-  // Poll while running
-  if (!kbPollInterval) {
-    kbPollInterval = setInterval(async () => {
-      const d = await api('GET', `/kanban?board_id=${kbCurrentBoard}`);
-      kbTasks = d.tasks || [];
-      renderKanban();
-      const stillRunning = kbTasks.some(t => t.status === 'running');
-      if (!stillRunning) { clearInterval(kbPollInterval); kbPollInterval = null; }
-    }, 1500);
-  }
 }
 
 async function cancelKbTask(taskId) {
   await api('POST', `/kanban/tasks/${taskId}/cancel`);
-  if (kbPollInterval) { clearInterval(kbPollInterval); kbPollInterval = null; }
   await loadKanban();
   toast('Task stopped');
 }
