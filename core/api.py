@@ -987,11 +987,17 @@ async def spawn_project(req: SpawnProjectRequest, _=Depends(_check_auth)):
     spawn_session = -(999000 + board_id)  # unique session per board
 
     if req.stream:
+        async def _spawn_stream():
+            async for chunk in _stream_agent(spawn_session, req.description, forward=False, extra_system=spawner_system):
+                if "data: [DONE]" in chunk:
+                    # Inject done event with board_id before [DONE]
+                    yield f"data: {json.dumps({'type': 'done', 'board_id': board_id})}\n\n"
+                yield chunk
+
         return StreamingResponse(
-            _stream_agent(spawn_session, req.description, forward=False, extra_system=spawner_system),
+            _spawn_stream(),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-            background=None,
         )
 
     result = await run_agent(spawn_session, req.description, extra_system=spawner_system)

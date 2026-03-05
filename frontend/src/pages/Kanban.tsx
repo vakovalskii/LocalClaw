@@ -1107,20 +1107,33 @@ function SpawnModal({
             </div>
           )}
 
+          {streaming && !boardId && (
+            <div className="flex items-center gap-2 text-text2 text-xs">
+              <span className="w-2 h-2 rounded-full bg-amber animate-pulse-dot" />
+              Spawning project...
+            </div>
+          )}
+
+          {boardId && (
+            <div className="flex items-center gap-2 px-3 py-2 bg-green/10 border border-green/20 rounded-sm">
+              <span className="text-green text-xs font-bold">Project ready!</span>
+            </div>
+          )}
+
           <div className="flex justify-end gap-2">
-            {!streaming && (
-              <button className="px-4 py-1.5 text-[11px] text-text3 border border-border hover:bg-bg2" onClick={onClose}>Cancel</button>
-            )}
             {!streaming && !boardId && (
-              <button
-                className="px-4 py-1.5 text-[11px] text-amber border border-amber/30 hover:bg-amber/10 disabled:opacity-40"
-                onClick={handleSpawn}
-                disabled={!description.trim()}
-              >Spawn</button>
+              <>
+                <button className="px-4 py-1.5 text-[11px] text-text3 border border-border hover:bg-bg2" onClick={onClose}>Cancel</button>
+                <button
+                  className="px-4 py-1.5 text-[11px] text-amber border border-amber/30 hover:bg-amber/10 disabled:opacity-40"
+                  onClick={handleSpawn}
+                  disabled={!description.trim()}
+                >Spawn</button>
+              </>
             )}
             {boardId && (
               <button
-                className="px-4 py-1.5 text-[11px] text-green border border-green/30 hover:bg-green/10"
+                className="px-4 py-2 text-[11px] font-bold bg-green text-bg rounded-sm hover:brightness-110 transition-all"
                 onClick={() => onComplete(boardId)}
               >Open Board</button>
             )}
