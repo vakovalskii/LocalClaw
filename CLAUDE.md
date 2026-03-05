@@ -1,7 +1,7 @@
-# LocalClaw — Developer Guidelines
+# LocalTaskClaw — Developer Guidelines
 
 Personal AI agent. Single-user. Runs on any Linux server or MacBook.
-Repo: https://github.com/vakovalskii/LocalClaw
+Repo: https://github.com/vakovalskii/LocalTaskClaw
 
 ---
 
@@ -157,7 +157,7 @@ MCP tools appear as `mcp_{server}_{tool_name}` in the agent.
 | `OWNER_ID` | `0` | Telegram user ID (0 = allow all) |
 | `API_SECRET` | — | Shared secret core ↔ bot ↔ admin UI |
 | `WORKSPACE` | `/data/workspace` | Agent workspace directory |
-| `DB_PATH` | `/data/localclaw.db` | SQLite DB path (**must exist before start**) |
+| `DB_PATH` | `/data/localtaskclaw.db` | SQLite DB path (**must exist before start**) |
 | `BRAVE_API_KEY` | — | Brave Search (optional, DDG fallback if empty) |
 | `MAX_ITERATIONS` | `20` | Max ReAct loop iterations per request |
 | `COMMAND_TIMEOUT` | `60` | Bash command timeout (seconds) |

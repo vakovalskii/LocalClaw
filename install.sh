@@ -2,8 +2,8 @@
 set -euo pipefail
 
 # =============================================================================
-# LocalClaw — Install Wizard
-# Usage: curl -fsSL https://raw.githubusercontent.com/vakovalskii/LocalClaw/main/install.sh | bash
+# LocalTaskClaw — Install Wizard
+# Usage: curl -fsSL https://raw.githubusercontent.com/vakovalskii/LocalTaskClaw/main/install.sh | bash
 # =============================================================================
 
 # Colors
@@ -16,7 +16,7 @@ BOLD='\033[1m'
 DIM='\033[2m'
 NC='\033[0m'
 
-REPO_URL="https://github.com/vakovalskii/LocalClaw"
+REPO_URL="https://github.com/vakovalskii/LocalTaskClaw"
 SPINNER_PID=""
 
 # --- Helpers -----------------------------------------------------------------
@@ -24,7 +24,7 @@ SPINNER_PID=""
 print_header() {
   echo ""
   echo -e "${BOLD}${CYAN}╔═══════════════════════════════════════════════╗${NC}"
-  echo -e "${BOLD}${CYAN}║          🤖  LocalClaw  Installer             ║${NC}"
+  echo -e "${BOLD}${CYAN}║          🤖  LocalTaskClaw  Installer             ║${NC}"
   echo -e "${BOLD}${CYAN}║       Персональный ИИ-агент за 5 минут        ║${NC}"
   echo -e "${BOLD}${CYAN}╚═══════════════════════════════════════════════╝${NC}"
   echo ""
@@ -118,7 +118,7 @@ echo -e "  ${BOLD}2)${NC} ⚡ ${BOLD}Процессы${NC} — без изоля
 dim "       Агент работает как Python-процесс. Видит всю файловую систему."
 echo ""
 echo -e "  ${BOLD}3)${NC} 📁 ${BOLD}Ограничить папкой агента${NC} — процессы + sandbox"
-dim "       Как вариант 2, но агент заперт в ~/.localclaw/workspace."
+dim "       Как вариант 2, но агент заперт в ~/.localtaskclaw/workspace."
 echo ""
 prompt INSTALL_MODE "Выбор" "1"
 
@@ -427,7 +427,7 @@ read -r CONFIRM; CONFIRM="${CONFIRM:-Y}"
 # =============================================================================
 
 if [[ "$MODE_NAME" == "docker" ]]; then
-  INSTALL_DIR="$HOME/localclaw"
+  INSTALL_DIR="$HOME/localtaskclaw"
   mkdir -p "$INSTALL_DIR/secrets" "$INSTALL_DIR/workspace" "$INSTALL_DIR/data"
 
   API_SECRET=$(generate_secret)
@@ -441,8 +441,8 @@ if [[ "$MODE_NAME" == "docker" ]]; then
   cat > "$INSTALL_DIR/docker-compose.yml" << COMPOSE
 services:
   core:
-    image: ghcr.io/vakovalskii/localclaw-core:latest
-    container_name: localclaw-core
+    image: ghcr.io/vakovalskii/localtaskclaw-core:latest
+    container_name: localtaskclaw-core
     restart: unless-stopped
     ports:
       - "8000:8000"
@@ -454,7 +454,7 @@ services:
       - OWNER_ID=${OWNER_ID}
       - API_SECRET_FILE=/run/secrets/api_secret
       - WORKSPACE=/workspace
-      - DB_PATH=/data/localclaw.db
+      - DB_PATH=/data/localtaskclaw.db
       - BRAVE_API_KEY_FILE=/run/secrets/brave_api_key
       - MAX_ITERATIONS=20
       - COMMAND_TIMEOUT=60
@@ -474,8 +474,8 @@ services:
       start_period: 20s
 
   bot:
-    image: ghcr.io/vakovalskii/localclaw-bot:latest
-    container_name: localclaw-bot
+    image: ghcr.io/vakovalskii/localtaskclaw-bot:latest
+    container_name: localtaskclaw-bot
     restart: unless-stopped
     depends_on:
       core:
@@ -505,9 +505,9 @@ COMPOSE
   info "Запускаю контейнеры..."
   cd "$INSTALL_DIR"
   spinner_start "docker compose up -d..."
-  if ! $COMPOSE_CMD up -d > /tmp/localclaw_up.log 2>&1; then
+  if ! $COMPOSE_CMD up -d > /tmp/localtaskclaw_up.log 2>&1; then
     spinner_stop
-    error "Ошибка запуска:"; tail -20 /tmp/localclaw_up.log; exit 1
+    error "Ошибка запуска:"; tail -20 /tmp/localtaskclaw_up.log; exit 1
   fi
   spinner_stop; success "Контейнеры запущены"
 
@@ -537,17 +537,17 @@ fi
 if [[ "$MODE_NAME" == "native" || "$MODE_NAME" == "restricted" ]]; then
 
   if [[ "$MODE_NAME" == "restricted" ]]; then
-    WORKSPACE_DIR="$HOME/.localclaw/workspace"
-    INSTALL_DIR="$HOME/.localclaw"
+    WORKSPACE_DIR="$HOME/.localtaskclaw/workspace"
+    INSTALL_DIR="$HOME/.localtaskclaw"
   else
-    WORKSPACE_DIR="$HOME/.localclaw/workspace"
-    INSTALL_DIR="$HOME/localclaw"
+    WORKSPACE_DIR="$HOME/.localtaskclaw/workspace"
+    INSTALL_DIR="$HOME/localtaskclaw"
   fi
-  DB_PATH="$HOME/.localclaw/localclaw.db"
+  DB_PATH="$HOME/.localtaskclaw/localtaskclaw.db"
   VENV_DIR="$INSTALL_DIR/venv"
   CODE_DIR="$INSTALL_DIR/app"
 
-  mkdir -p "$INSTALL_DIR" "$WORKSPACE_DIR" "$HOME/.localclaw"
+  mkdir -p "$INSTALL_DIR" "$WORKSPACE_DIR" "$HOME/.localtaskclaw"
 
   # Clone repo
   if [[ -d "$CODE_DIR/.git" ]]; then
@@ -556,8 +556,8 @@ if [[ "$MODE_NAME" == "native" || "$MODE_NAME" == "restricted" ]]; then
   else
     info "Клонирую репозиторий..."
     spinner_start "git clone..."
-    if ! git clone --quiet "$REPO_URL" "$CODE_DIR" > /tmp/localclaw_clone.log 2>&1; then
-      spinner_stop; error "Ошибка клонирования:"; tail -5 /tmp/localclaw_clone.log; exit 1
+    if ! git clone --quiet "$REPO_URL" "$CODE_DIR" > /tmp/localtaskclaw_clone.log 2>&1; then
+      spinner_stop; error "Ошибка клонирования:"; tail -5 /tmp/localtaskclaw_clone.log; exit 1
     fi
     spinner_stop; success "Код скачан"
   fi
@@ -570,11 +570,11 @@ if [[ "$MODE_NAME" == "native" || "$MODE_NAME" == "restricted" ]]; then
 
   info "Устанавливаю зависимости..."
   spinner_start "pip install..."
-  if ! "$VENV_DIR/bin/pip" install -q -r "$CODE_DIR/core/requirements.txt" > /tmp/localclaw_pip.log 2>&1; then
-    spinner_stop; error "Ошибка pip:"; tail -10 /tmp/localclaw_pip.log; exit 1
+  if ! "$VENV_DIR/bin/pip" install -q -r "$CODE_DIR/core/requirements.txt" > /tmp/localtaskclaw_pip.log 2>&1; then
+    spinner_stop; error "Ошибка pip:"; tail -10 /tmp/localtaskclaw_pip.log; exit 1
   fi
   if [[ -f "$CODE_DIR/bot/requirements.txt" ]]; then
-    "$VENV_DIR/bin/pip" install -q -r "$CODE_DIR/bot/requirements.txt" >> /tmp/localclaw_pip.log 2>&1 || true
+    "$VENV_DIR/bin/pip" install -q -r "$CODE_DIR/bot/requirements.txt" >> /tmp/localtaskclaw_pip.log 2>&1 || true
   fi
   spinner_stop; success "Зависимости установлены"
 
@@ -587,7 +587,7 @@ if [[ "$MODE_NAME" == "native" || "$MODE_NAME" == "restricted" ]]; then
   chmod 700 "$SECRETS_DIR"
 
   cat > "$SECRETS_DIR/core.env" << ENV
-# LocalClaw Core — generated by installer
+# LocalTaskClaw Core — generated by installer
 # DO NOT COMMIT
 
 MODEL=${MODEL_NAME}
@@ -626,12 +626,12 @@ ENV
     LAUNCH_DIR="$HOME/Library/LaunchAgents"
     mkdir -p "$LAUNCH_DIR"
 
-    cat > "$LAUNCH_DIR/io.localclaw.core.plist" << PLIST
+    cat > "$LAUNCH_DIR/io.localtaskclaw.core.plist" << PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>Label</key>              <string>io.localclaw.core</string>
+  <key>Label</key>              <string>io.localtaskclaw.core</string>
   <key>ProgramArguments</key>
   <array>
     <string>${VENV_DIR}/bin/python</string>
@@ -645,20 +645,20 @@ ENV
   <dict>
     <key>ENV_FILE</key>         <string>${SECRETS_DIR}/core.env</string>
   </dict>
-  <key>StandardOutPath</key>    <string>/tmp/localclaw-core.log</string>
-  <key>StandardErrorPath</key>  <string>/tmp/localclaw-core.log</string>
+  <key>StandardOutPath</key>    <string>/tmp/localtaskclaw-core.log</string>
+  <key>StandardErrorPath</key>  <string>/tmp/localtaskclaw-core.log</string>
   <key>RunAtLoad</key>          <true/>
   <key>KeepAlive</key>          <true/>
 </dict>
 </plist>
 PLIST
 
-    cat > "$LAUNCH_DIR/io.localclaw.bot.plist" << PLIST
+    cat > "$LAUNCH_DIR/io.localtaskclaw.bot.plist" << PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>Label</key>              <string>io.localclaw.bot</string>
+  <key>Label</key>              <string>io.localtaskclaw.bot</string>
   <key>ProgramArguments</key>
   <array>
     <string>${VENV_DIR}/bin/python</string>
@@ -669,8 +669,8 @@ PLIST
   <dict>
     <key>ENV_FILE</key>         <string>${SECRETS_DIR}/bot.env</string>
   </dict>
-  <key>StandardOutPath</key>    <string>/tmp/localclaw-bot.log</string>
-  <key>StandardErrorPath</key>  <string>/tmp/localclaw-bot.log</string>
+  <key>StandardOutPath</key>    <string>/tmp/localtaskclaw-bot.log</string>
+  <key>StandardErrorPath</key>  <string>/tmp/localtaskclaw-bot.log</string>
   <key>RunAtLoad</key>          <true/>
   <key>KeepAlive</key>          <true/>
 </dict>
@@ -678,10 +678,10 @@ PLIST
 PLIST
 
     # Load services
-    launchctl unload "$LAUNCH_DIR/io.localclaw.core.plist" 2>/dev/null || true
-    launchctl unload "$LAUNCH_DIR/io.localclaw.bot.plist"  2>/dev/null || true
-    launchctl load   "$LAUNCH_DIR/io.localclaw.core.plist"
-    launchctl load   "$LAUNCH_DIR/io.localclaw.bot.plist"
+    launchctl unload "$LAUNCH_DIR/io.localtaskclaw.core.plist" 2>/dev/null || true
+    launchctl unload "$LAUNCH_DIR/io.localtaskclaw.bot.plist"  2>/dev/null || true
+    launchctl load   "$LAUNCH_DIR/io.localtaskclaw.core.plist"
+    launchctl load   "$LAUNCH_DIR/io.localtaskclaw.bot.plist"
     success "LaunchAgents зарегистрированы (автозапуск при логине)"
 
   # --- Linux: systemd user units ---
@@ -689,9 +689,9 @@ PLIST
     SYSTEMD_DIR="$HOME/.config/systemd/user"
     mkdir -p "$SYSTEMD_DIR"
 
-    cat > "$SYSTEMD_DIR/localclaw-core.service" << SVC
+    cat > "$SYSTEMD_DIR/localtaskclaw-core.service" << SVC
 [Unit]
-Description=LocalClaw Core
+Description=LocalTaskClaw Core
 After=network.target
 
 [Service]
@@ -701,18 +701,18 @@ ExecStart=${VENV_DIR}/bin/python -m uvicorn api:app --host 0.0.0.0 --port 8000
 Environment=ENV_FILE=${SECRETS_DIR}/core.env
 Restart=always
 RestartSec=5
-StandardOutput=append:/tmp/localclaw-core.log
-StandardError=append:/tmp/localclaw-core.log
+StandardOutput=append:/tmp/localtaskclaw-core.log
+StandardError=append:/tmp/localtaskclaw-core.log
 
 [Install]
 WantedBy=default.target
 SVC
 
-    cat > "$SYSTEMD_DIR/localclaw-bot.service" << SVC
+    cat > "$SYSTEMD_DIR/localtaskclaw-bot.service" << SVC
 [Unit]
-Description=LocalClaw Bot
-After=localclaw-core.service
-Requires=localclaw-core.service
+Description=LocalTaskClaw Bot
+After=localtaskclaw-core.service
+Requires=localtaskclaw-core.service
 
 [Service]
 Type=simple
@@ -721,32 +721,32 @@ ExecStart=${VENV_DIR}/bin/python main.py
 Environment=ENV_FILE=${SECRETS_DIR}/bot.env
 Restart=always
 RestartSec=5
-StandardOutput=append:/tmp/localclaw-bot.log
-StandardError=append:/tmp/localclaw-bot.log
+StandardOutput=append:/tmp/localtaskclaw-bot.log
+StandardError=append:/tmp/localtaskclaw-bot.log
 
 [Install]
 WantedBy=default.target
 SVC
 
     systemctl --user daemon-reload
-    systemctl --user enable --now localclaw-core.service
-    systemctl --user enable --now localclaw-bot.service
+    systemctl --user enable --now localtaskclaw-core.service
+    systemctl --user enable --now localtaskclaw-bot.service
     success "systemd user units запущены"
 
   else
     # Fallback: bare nohup
     warn "systemd/launchd не найдены — запускаю через nohup"
     pkill -f "uvicorn api:app" 2>/dev/null || true
-    pkill -f "localclaw-bot" 2>/dev/null  || true
+    pkill -f "localtaskclaw-bot" 2>/dev/null  || true
     sleep 1
     cd "$CODE_DIR/core"
     ENV_FILE="$SECRETS_DIR/core.env" \
       nohup "$VENV_DIR/bin/python" -m uvicorn api:app --host 0.0.0.0 --port 8000 \
-      > /tmp/localclaw-core.log 2>&1 &
+      > /tmp/localtaskclaw-core.log 2>&1 &
     cd "$CODE_DIR/bot"
     ENV_FILE="$SECRETS_DIR/bot.env" \
       nohup "$VENV_DIR/bin/python" main.py \
-      > /tmp/localclaw-bot.log 2>&1 &
+      > /tmp/localtaskclaw-bot.log 2>&1 &
     success "Процессы запущены (nohup)"
   fi
 
@@ -760,20 +760,20 @@ SVC
     sleep 2
   done
   spinner_stop
-  [[ "$HEALTHY" == "true" ]] && success "Core готов!" || warn "Core ещё загружается (см. /tmp/localclaw-core.log)"
+  [[ "$HEALTHY" == "true" ]] && success "Core готов!" || warn "Core ещё загружается (см. /tmp/localtaskclaw-core.log)"
 
   ADMIN_URL="http://localhost:8000/admin"
 
   if [[ "$(uname -s)" == "Darwin" ]]; then
-    MANAGE_INFO="Логи core: ${BOLD}tail -f /tmp/localclaw-core.log${NC}
-Логи bot:  ${BOLD}tail -f /tmp/localclaw-bot.log${NC}
-Стоп:      ${BOLD}launchctl unload ~/Library/LaunchAgents/io.localclaw.*.plist${NC}
-Старт:     ${BOLD}launchctl load ~/Library/LaunchAgents/io.localclaw.*.plist${NC}"
+    MANAGE_INFO="Логи core: ${BOLD}tail -f /tmp/localtaskclaw-core.log${NC}
+Логи bot:  ${BOLD}tail -f /tmp/localtaskclaw-bot.log${NC}
+Стоп:      ${BOLD}launchctl unload ~/Library/LaunchAgents/io.localtaskclaw.*.plist${NC}
+Старт:     ${BOLD}launchctl load ~/Library/LaunchAgents/io.localtaskclaw.*.plist${NC}"
   else
-    MANAGE_INFO="Логи core: ${BOLD}tail -f /tmp/localclaw-core.log${NC}
-Логи bot:  ${BOLD}tail -f /tmp/localclaw-bot.log${NC}
-Стоп:      ${BOLD}systemctl --user stop localclaw-core localclaw-bot${NC}
-Старт:     ${BOLD}systemctl --user start localclaw-core localclaw-bot${NC}"
+    MANAGE_INFO="Логи core: ${BOLD}tail -f /tmp/localtaskclaw-core.log${NC}
+Логи bot:  ${BOLD}tail -f /tmp/localtaskclaw-bot.log${NC}
+Стоп:      ${BOLD}systemctl --user stop localtaskclaw-core localtaskclaw-bot${NC}
+Старт:     ${BOLD}systemctl --user start localtaskclaw-core localtaskclaw-bot${NC}"
   fi
 
 fi
@@ -792,7 +792,7 @@ printf "${BOLD}${GREEN}║${NC}  %-16s ${BOLD}%-30s${NC} ${BOLD}${GREEN}║${NC}
 printf "${BOLD}${GREEN}║${NC}  %-16s ${BOLD}%-30s${NC} ${BOLD}${GREEN}║${NC}\n" "Telegram бот:"  "@$BOT_USERNAME"
 printf "${BOLD}${GREEN}║${NC}  %-16s ${BOLD}%-30s${NC} ${BOLD}${GREEN}║${NC}\n" "Модель:"        "$MODEL_NAME"
 if [[ "$MODE_NAME" == "restricted" ]]; then
-  printf "${BOLD}${GREEN}║${NC}  %-16s ${BOLD}%-30s${NC} ${BOLD}${GREEN}║${NC}\n" "Workspace:"   "~/.localclaw/workspace"
+  printf "${BOLD}${GREEN}║${NC}  %-16s ${BOLD}%-30s${NC} ${BOLD}${GREEN}║${NC}\n" "Workspace:"   "~/.localtaskclaw/workspace"
 fi
 echo -e "${BOLD}${GREEN}╚══════════════════════════════════════════════════╝${NC}"
 echo ""

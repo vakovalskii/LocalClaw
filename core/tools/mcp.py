@@ -55,7 +55,7 @@ class McpServer:
             "params": {
                 "protocolVersion": "2024-11-05",
                 "capabilities": {},
-                "clientInfo": {"name": "LocalClaw", "version": "0.1.0"},
+                "clientInfo": {"name": "LocalTaskClaw", "version": "0.1.0"},
             },
         })
         await self._recv()

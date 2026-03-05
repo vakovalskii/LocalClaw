@@ -1,4 +1,4 @@
-# LocalClaw — Plan
+# LocalTaskClaw — Plan
 
 Personal AI agent. Single-user. Runs on any Linux server or MacBook.
 
@@ -25,11 +25,11 @@ Personal AI agent. Single-user. Runs on any Linux server or MacBook.
 
 ### Mode 2 — Native (MacBook / laptop / no Docker)
 - No Docker required
-- Python venv in `~/.localclaw/`
+- Python venv in `~/.localtaskclaw/`
 - Processes managed via launchd (macOS) or systemd (Linux)
-- Secrets in `~/.localclaw/secrets/` chmod 600
+- Secrets in `~/.localtaskclaw/secrets/` chmod 600
 - Isolation: agent runs bash in subprocess with restricted env
-- Start/stop: `localclaw start` / `localclaw stop`
+- Start/stop: `localtaskclaw start` / `localtaskclaw stop`
 - Storage: SQLite (no postgres needed)
 - Same Ollama integration
 
@@ -172,9 +172,9 @@ Best ideas from DaisyMobile + OpenClaw combined:
 - Only Traefik exposes 80/443
 
 **Native mode:**
-- Secrets in ~/.localclaw/secrets/ chmod 600
+- Secrets in ~/.localtaskclaw/secrets/ chmod 600
 - Agent subprocess with restricted env (no secrets leak)
-- Workspace isolated to ~/.localclaw/workspace/
+- Workspace isolated to ~/.localtaskclaw/workspace/
 - Admin panel: localhost only + password
 
 ---

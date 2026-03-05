@@ -1,4 +1,4 @@
-"""LocalClaw Core — entry point."""
+"""LocalTaskClaw Core — entry point."""
 
 import asyncio
 import uvicorn
@@ -19,7 +19,7 @@ async def _startup():
 
 def main():
     core_logger.info("=" * 50)
-    core_logger.info("LocalClaw Core Agent")
+    core_logger.info("LocalTaskClaw Core Agent")
     core_logger.info(f"  Model:     {CONFIG.model}")
     core_logger.info(f"  LLM URL:   {CONFIG.llm_base_url}")
     core_logger.info(f"  Workspace: {CONFIG.workspace}")

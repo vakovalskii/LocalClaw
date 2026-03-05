@@ -133,7 +133,7 @@ async def _ddg_search(query: str, limit: int) -> list | None:
                 "https://html.duckduckgo.com/html/",
                 params={"q": query},
                 headers={
-                    "User-Agent": "Mozilla/5.0 (compatible; LocalClaw/1.0)",
+                    "User-Agent": "Mozilla/5.0 (compatible; LocalTaskClaw/1.0)",
                     "Accept-Language": "en-US,en;q=0.9",
                 },
             )

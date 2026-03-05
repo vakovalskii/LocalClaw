@@ -1,6 +1,6 @@
 version: "3.9"
 
-# LocalClaw — 3-container stack
+# LocalTaskClaw — 3-container stack
 # core: Python ReAct agent + FastAPI
 # bot: Telegram bot
 # (admin: coming in v0.2)
@@ -27,12 +27,12 @@ services:
     build:
       context: ./core
       dockerfile: Dockerfile
-    container_name: localclaw-core
+    container_name: localtaskclaw-core
     networks: [internal]
     env_file: ./secrets/core.env
     environment:
       WORKSPACE: /data/workspace
-      DB_PATH: /data/localclaw.db
+      DB_PATH: /data/localtaskclaw.db
     volumes:
       - ./data:/data
     ports:
@@ -49,7 +49,7 @@ services:
     build:
       context: ./bot
       dockerfile: Dockerfile
-    container_name: localclaw-bot
+    container_name: localtaskclaw-bot
     networks: [internal]
     env_file: ./secrets/bot.env
     environment:

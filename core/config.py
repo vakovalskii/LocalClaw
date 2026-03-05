@@ -1,4 +1,4 @@
-"""LocalClaw configuration — loaded from environment variables."""
+"""LocalTaskClaw configuration — loaded from environment variables."""
 
 import os
 from dataclasses import dataclass, field
@@ -40,7 +40,7 @@ class Config:
 
     # Paths
     workspace: str = field(default_factory=lambda: _env("WORKSPACE", "/data/workspace"))
-    db_path: str = field(default_factory=lambda: _env("DB_PATH", "/data/localclaw.db"))
+    db_path: str = field(default_factory=lambda: _env("DB_PATH", "/data/localtaskclaw.db"))
 
     # API
     api_port: int = field(default_factory=lambda: _env_int("API_PORT", 8000))

@@ -19,7 +19,7 @@ from agent.run import run_agent
 from agent.session import sessions
 from db import get_db, get_scheduled_tasks
 
-app = FastAPI(title="LocalClaw Core", version="0.1.0")
+app = FastAPI(title="LocalTaskClaw Core", version="0.1.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -371,8 +371,8 @@ async def restart_core(_=Depends(_check_auth)):
 # ── Logs ──────────────────────────────────────────────────────────────────────
 
 _LOG_FILES = {
-    "core": "/tmp/localclaw-core.log",
-    "bot": "/tmp/localclaw-bot.log",
+    "core": "/tmp/localtaskclaw-core.log",
+    "bot": "/tmp/localtaskclaw-bot.log",
 }
 
 

@@ -1,7 +1,7 @@
 """Skills loader — scans workspace for SKILL.md files and injects into prompt.
 
 Skills can come from:
-1. Built-in skills: /app/skills/ (shipped with LocalClaw)
+1. Built-in skills: /app/skills/ (shipped with LocalTaskClaw)
 2. User workspace: {workspace}/.agents/skills/ or {workspace}/.claude/skills/
    (installed via `npx skills add owner/repo@skill -y`)
 """
@@ -33,7 +33,7 @@ def load_skills(workspace: str) -> str:
     for injection into the system prompt.
     """
     skills_dirs = [
-        # Built-in skills shipped with LocalClaw
+        # Built-in skills shipped with LocalTaskClaw
         str(Path(__file__).parent.parent / "skills"),
         # User-installed via npx skills add
         os.path.join(workspace, ".agents", "skills"),

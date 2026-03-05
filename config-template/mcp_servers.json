@@ -1,5 +1,5 @@
 {
-  "_comment": "MCP server configuration for LocalClaw. Copy to /data/workspace/mcp_servers.json",
+  "_comment": "MCP server configuration for LocalTaskClaw. Copy to /data/workspace/mcp_servers.json",
   "_docs": "https://modelcontextprotocol.io/servers",
   "servers": {
     "_example_filesystem": {

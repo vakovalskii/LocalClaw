@@ -1,11 +1,11 @@
-# LocalClaw
+# LocalTaskClaw
 
 Personal AI agent. Deploys in 3 steps on any Linux server.
 
 ## Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/vakovalskii/LocalClaw/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/vakovalskii/LocalTaskClaw/main/install.sh | bash
 ```
 
 ## What you get

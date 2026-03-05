@@ -1,4 +1,4 @@
-"""LocalClaw Telegram Bot — single-user, owner only, with streaming."""
+"""LocalTaskClaw Telegram Bot — single-user, owner only, with streaming."""
 
 import asyncio
 import logging
@@ -47,7 +47,7 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not _is_owner(update):
         return
     await update.message.reply_text(
-        "👋 LocalClaw запущен!\n\nПросто пиши — я твой личный агент.\n\n"
+        "👋 LocalTaskClaw запущен!\n\nПросто пиши — я твой личный агент.\n\n"
         "Команды:\n/clear — сбросить историю\n/help — помощь"
     )
 
@@ -65,7 +65,7 @@ async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not _is_owner(update):
         return
     await update.message.reply_text(
-        "🤖 *LocalClaw* — твой личный AI-агент\n\n"
+        "🤖 *LocalTaskClaw* — твой личный AI-агент\n\n"
         "Умею:\n"
         "• Запускать команды в рабочем пространстве\n"
         "• Искать в интернете\n"
