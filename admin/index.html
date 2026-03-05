@@ -1189,7 +1189,7 @@
 <script>
 // ── Config ────────────────────────────────────────────────────────────────────
 
-const API = 'http://localhost:8000';
+const API = `${window.location.protocol}//${window.location.hostname}:11387`;
 const API_KEY = (() => {
   let k = localStorage.getItem('lc_api_key');
   if (!k) {
