@@ -523,6 +523,34 @@ async def run_update(_=Depends(_check_auth)):
         return {"status": "error", "output": str(e)}
 
 
+@app.post("/seed-demo")
+async def seed_demo(_=Depends(_check_auth)):
+    """Run seed_kanban.py to populate demo agents and tasks."""
+    import subprocess
+    seed_script = os.path.join(os.path.dirname(__file__), "..", "scripts", "seed_kanban.py")
+    if not os.path.isfile(seed_script):
+        raise HTTPException(status_code=404, detail="seed_kanban.py not found")
+
+    venv_python = os.path.join(os.path.dirname(__file__), "..", "..", "venv", "bin", "python")
+    python_cmd = venv_python if os.path.isfile(venv_python) else "python3"
+
+    core_logger.info("Seed demo triggered via API")
+    try:
+        result = subprocess.run(
+            [python_cmd, seed_script, "--reset"],
+            capture_output=True, text=True, timeout=30,
+            env={**os.environ, "API_URL": f"http://localhost:{CONFIG.api_port}", "API_SECRET": CONFIG.api_secret},
+        )
+        output = (result.stdout + "\n" + result.stderr).strip()
+        if result.returncode != 0:
+            return {"status": "error", "output": output}
+        return {"status": "ok", "output": output}
+    except subprocess.TimeoutExpired:
+        return {"status": "error", "output": "Seed timed out (30s)"}
+    except Exception as e:
+        return {"status": "error", "output": str(e)}
+
+
 # ── Logs ──────────────────────────────────────────────────────────────────────
 
 _LOG_FILES = {

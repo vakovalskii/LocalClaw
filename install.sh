@@ -859,3 +859,40 @@ fi
 echo -e "  Admin UI: ${BOLD}${ADMIN_URL}${NC}  (пароль: API Secret выше)"
 echo -e "  ${RED}Удалить:${NC}  ${BOLD}bash ~/.localtaskclaw/app/uninstall.sh${NC}"
 echo ""
+
+# ── Предложение запустить демо канбан ──
+echo ""
+echo -e "${BOLD}${CYAN}── Тестовый запуск ──${NC}"
+echo ""
+echo -e "  Хочешь загрузить демо-доску с AI-агентами?"
+echo -e "  Будут созданы: 4 воркера + 1 оркестратор + 5 задач."
+echo -e "  Оркестратор автоматически запустит всех агентов."
+echo ""
+echo -ne "${BOLD}  Запустить демо? [y/N]${NC}: " >/dev/tty
+read -r RUN_DEMO </dev/tty
+if [[ "$RUN_DEMO" =~ ^[Yy] ]]; then
+  echo ""
+  info "Загружаю демо-доску..."
+  if "$VENV_DIR/bin/python" "$CODE_DIR/scripts/seed_kanban.py" 2>&1; then
+    echo ""
+    success "Демо загружено! Открой канбан: ${BOLD}${ADMIN_URL}#kanban${NC}"
+    echo ""
+    echo -ne "${BOLD}  Запустить оркестратор сейчас? [Y/n]${NC}: " >/dev/tty
+    read -r RUN_ORC </dev/tty
+    RUN_ORC="${RUN_ORC:-Y}"
+    if [[ "$RUN_ORC" =~ ^[Yy] ]]; then
+      # Find the orchestrator task and run it
+      ORC_TASK_ID=$(curl -s -H "X-Api-Key: ${API_SECRET}" "http://localhost:11387/kanban" 2>/dev/null \
+        | python3 -c "import sys,json; tasks=json.load(sys.stdin).get('tasks',[]); orc=[t for t in tasks if t.get('agent_role')=='orchestrator']; print(orc[0]['id'] if orc else '')" 2>/dev/null)
+      if [[ -n "$ORC_TASK_ID" ]]; then
+        curl -s -X POST -H "X-Api-Key: ${API_SECRET}" "http://localhost:11387/kanban/tasks/${ORC_TASK_ID}/run" >/dev/null 2>&1
+        success "Оркестратор запущен (задача #${ORC_TASK_ID})! Следи в UI: ${BOLD}${ADMIN_URL}#kanban${NC}"
+      else
+        warn "Не удалось найти задачу оркестратора. Запусти вручную в UI."
+      fi
+    fi
+  else
+    warn "Ошибка загрузки демо. Можно запустить позже: ${BOLD}python ~/.localtaskclaw/app/scripts/seed_kanban.py${NC}"
+  fi
+fi
+echo ""
