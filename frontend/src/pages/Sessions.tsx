@@ -60,8 +60,8 @@ export default function Sessions() {
   // Load sessions
   useEffect(() => {
     setSessionsLoading(true);
-    api<Session[]>('GET', '/sessions')
-      .then(setSessions)
+    api<{ sessions: Session[] }>('GET', '/sessions')
+      .then(d => setSessions(d.sessions || []))
       .catch(() => setSessions([]))
       .finally(() => setSessionsLoading(false));
   }, []);
@@ -72,11 +72,11 @@ export default function Sessions() {
     try {
       if (currentTab === 'messages') {
         const chatId = key.replace('owner_', '');
-        const msgs = await api<ChatMessage[]>('GET', `/history?chat_id=${chatId}`);
-        setMessages(msgs);
+        const d = await api<{ messages: ChatMessage[] }>('GET', `/history?chat_id=${chatId}`);
+        setMessages((d.messages || []).filter(m => m.content && m.content !== 'null'));
       } else {
-        const evts = await api<TraceEvent[]>('GET', `/events?session_key=${key}&limit=200`);
-        setEvents(evts);
+        const d = await api<{ events: TraceEvent[] }>('GET', `/events?session_key=${key}&limit=200`);
+        setEvents(d.events || []);
       }
     } catch {
       if (currentTab === 'messages') setMessages([]);
