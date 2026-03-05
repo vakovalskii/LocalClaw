@@ -1,6 +1,8 @@
 # LocalTaskClaw
 
-Personal AI agent. Deploys in 3 steps on any Linux server.
+Personal AI agent with Telegram bot, admin UI, and kanban board for multi-agent task management.
+
+![LocalTaskClaw Admin UI](photo_2026-03-05_08-36-20.jpg)
 
 ## Install
 
@@ -10,12 +12,13 @@ curl -fsSL https://raw.githubusercontent.com/vakovalskii/LocalTaskClaw/main/inst
 
 ## What you get
 
-- Telegram bot connected to your AI models
-- Admin UI (chat, sessions, tasks, files, settings)
-- Any OpenAI-compatible model (local or cloud)
-- Web search via Brave
-- HTTPS auto via Let's Encrypt (if you have a domain)
-- Works without a domain (IP:port mode)
+- **Telegram bot** — stream replies, live typing preview
+- **Admin UI** — chat, sessions, kanban, tasks, files, logs, settings
+- **Kanban board** — up to 10 agents with custom identities, 4-column board (Backlog → In Progress → Ready for Review → Done), run agents on tasks, view .md artifacts
+- **Any OpenAI-compatible model** — local (Ollama) or cloud
+- **Web search** via Brave
+- **Real token streaming** — both in UI and Telegram
+- **Three isolation modes** — Docker (recommended), native processes, or restricted to agent folder
 
 ## Requirements
 
