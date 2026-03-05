@@ -299,8 +299,8 @@ fi
 
 step "Шаг 4 — Языковая модель"
 
-echo "  ${BOLD}1)${NC} Ollama — локальная модель на этом сервере ${CYAN}(рекомендуем)${NC}"
-echo "  ${BOLD}2)${NC} Внешний API — OpenAI / свой сервер / облако"
+echo -e "  ${BOLD}1)${NC} Ollama — локальная модель на этом сервере ${CYAN}(рекомендуем)${NC}"
+echo -e "  ${BOLD}2)${NC} Внешний API — OpenAI / свой сервер / облако"
 echo ""
 prompt MODEL_SOURCE "Выбор" "1"
 
@@ -329,7 +329,7 @@ if [[ "$MODEL_SOURCE" == "1" ]]; then
   add_model_option() {
     local min_gb="$1" name="$2" tag="$3" size="$4" note="$5"
     if [[ "$AVAILABLE_GB" -ge "$min_gb" ]]; then
-      echo "  ${BOLD}${OPT_NUM})${NC} ${name}:${tag}  ${YELLOW}(${size})${NC}  — ${note}"
+      echo -e "  ${BOLD}${OPT_NUM})${NC} ${name}:${tag}  ${YELLOW}(${size})${NC}  — ${note}"
       MODEL_OPTIONS["$OPT_NUM"]="${name}:${tag}"
       OPT_NUM=$((OPT_NUM + 1))
     fi
@@ -343,7 +343,7 @@ if [[ "$MODEL_SOURCE" == "1" ]]; then
   add_model_option 22 "deepseek-r1" "14b"  "9.0GB" "reasoning + цепочка мыслей"
   add_model_option 50 "qwen2.5"     "72b"  "47GB"  "топ open-source"
   CUSTOM_OPT=$OPT_NUM
-  echo "  ${BOLD}${OPT_NUM})${NC} Ввести своё название"
+  echo -e "  ${BOLD}${OPT_NUM})${NC} Ввести своё название"
   echo ""
 
   prompt OLLAMA_CHOICE "Выбор" "1"
