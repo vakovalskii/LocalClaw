@@ -93,18 +93,21 @@ class AgentCreateRequest(BaseModel):
     color: str = "#f59e0b"
     emoji: str = "🤖"
     system_prompt: str = ""
+    role: str = "worker"
 
 class AgentUpdateRequest(BaseModel):
     name: str | None = None
     color: str | None = None
     emoji: str | None = None
     system_prompt: str | None = None
+    role: str | None = None
 
 class KanbanTaskCreateRequest(BaseModel):
     title: str
     description: str = ""
     agent_id: int | None = None
     column: str = "backlog"
+    repeat_minutes: int = 0
 
 class KanbanTaskUpdateRequest(BaseModel):
     title: str | None = None
@@ -112,6 +115,7 @@ class KanbanTaskUpdateRequest(BaseModel):
     agent_id: int | None = None
     column: str | None = None
     position: int | None = None
+    repeat_minutes: int | None = None
 
 class KanbanTaskMoveRequest(BaseModel):
     column: str
@@ -482,7 +486,7 @@ async def create_agent_endpoint(req: AgentCreateRequest, _=Depends(_check_auth))
     agents = get_agents()
     if len(agents) >= 10:
         raise HTTPException(status_code=400, detail="Maximum 10 agents allowed")
-    agent = create_agent(req.name, req.color, req.emoji, req.system_prompt)
+    agent = create_agent(req.name, req.color, req.emoji, req.system_prompt, req.role)
     return agent
 
 
@@ -509,7 +513,7 @@ async def list_kanban(_=Depends(_check_auth)):
 
 @app.post("/kanban/tasks")
 async def create_kanban_task_endpoint(req: KanbanTaskCreateRequest, _=Depends(_check_auth)):
-    task = create_kanban_task(req.title, req.description, req.agent_id, req.column)
+    task = create_kanban_task(req.title, req.description, req.agent_id, req.column, req.repeat_minutes)
     return task
 
 
@@ -552,13 +556,14 @@ async def run_kanban_task(task_id: int, _=Depends(_check_auth)):
         extra_parts.append(f"Your name: {task['agent_name']}")
         if task.get("agent_emoji"):
             extra_parts[-1] += f" {task['agent_emoji']}"
-    if task.get("system_prompt"):
-        extra_parts.append(task["system_prompt"])
+    if task.get("agent_system_prompt"):
+        extra_parts.append(task["agent_system_prompt"])
     if CONFIG.owner_id:
         extra_parts.append(f"Owner Telegram ID: {CONFIG.owner_id}")
     extra_system = "\n".join(extra_parts)
 
     task_prompt = f"Task: {task['title']}\n\n{task['description']}".strip()
+    repeat_minutes = task.get("repeat_minutes", 0) or 0
 
     async def _run():
         try:
@@ -572,7 +577,22 @@ async def run_kanban_task(task_id: int, _=Depends(_check_auth)):
             os.makedirs(os.path.dirname(artifact_path), exist_ok=True)
             with open(artifact_path, "w") as f:
                 f.write(artifact_md)
-            update_kanban_task(task_id, column="review", status="done", artifact=artifact_path)
+            # If repeat is set — go back to backlog; otherwise move to review
+            if repeat_minutes > 0:
+                update_kanban_task(task_id, column="backlog", status="idle", artifact=artifact_path)
+                core_logger.info(f"Kanban task {task_id} will repeat in {repeat_minutes}m")
+                await asyncio.sleep(repeat_minutes * 60)
+                # Re-trigger via internal HTTP so the full run path is reused
+                import httpx
+                url = f"http://localhost:{CONFIG.api_port}/kanban/tasks/{task_id}/run"
+                headers = {"X-Api-Key": CONFIG.api_secret} if CONFIG.api_secret else {}
+                try:
+                    async with httpx.AsyncClient(timeout=10) as client:
+                        await client.post(url, headers=headers)
+                except Exception as e:
+                    core_logger.warning(f"Repeat trigger failed for task {task_id}: {e}")
+            else:
+                update_kanban_task(task_id, column="review", status="done", artifact=artifact_path)
         except asyncio.CancelledError:
             core_logger.info(f"Kanban task {task_id} cancelled")
             update_kanban_task(task_id, status="idle", column="backlog")

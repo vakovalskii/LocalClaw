@@ -11,6 +11,12 @@ from tools.memory import tool_memory, TOOL_DEFINITION as MEMORY_DEF
 from tools.scheduler import tool_schedule, TOOL_DEFINITION as SCHEDULER_DEF
 from tools.search_tools import tool_search_tools, TOOL_DEFINITION as SEARCH_TOOLS_DEF
 from tools.edit import tool_edit_file, TOOL_DEFINITION as EDIT_DEF
+from tools.telegram import tool_telegram_notify, TOOL_DEFINITION as TELEGRAM_DEF
+from tools.kanban import (
+    tool_kanban_list, tool_kanban_move, tool_kanban_run,
+    tool_kanban_update, tool_kanban_create,
+    TOOL_DEFINITIONS as KANBAN_DEFS,
+)
 
 
 _BUILTIN_HANDLERS = {
@@ -25,9 +31,15 @@ _BUILTIN_HANDLERS = {
     "schedule_task": tool_schedule,
     "search_tools": tool_search_tools,
     "edit_file": tool_edit_file,
+    "telegram_notify": tool_telegram_notify,
+    "kanban_list": tool_kanban_list,
+    "kanban_move": tool_kanban_move,
+    "kanban_run": tool_kanban_run,
+    "kanban_update": tool_kanban_update,
+    "kanban_create": tool_kanban_create,
 }
 
-_DEFINITIONS = [BASH_DEF] + WEB_DEFS + FILE_DEFS + [EDIT_DEF, MEMORY_DEF, SCHEDULER_DEF, SEARCH_TOOLS_DEF]
+_DEFINITIONS = [BASH_DEF] + WEB_DEFS + FILE_DEFS + [EDIT_DEF, MEMORY_DEF, SCHEDULER_DEF, SEARCH_TOOLS_DEF, TELEGRAM_DEF] + KANBAN_DEFS
 
 
 def get_tool_definitions() -> list:

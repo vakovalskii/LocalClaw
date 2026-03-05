@@ -28,6 +28,7 @@ async def call_llm(
     if tools:
         payload["tools"] = tools
         payload["tool_choice"] = "auto"
+        payload["parallel_tool_calls"] = True
 
     headers = {
         "Authorization": f"Bearer {CONFIG.llm_api_key}",
@@ -82,6 +83,7 @@ async def call_llm_stream(
     if tools:
         payload["tools"] = tools
         payload["tool_choice"] = "auto"
+        payload["parallel_tool_calls"] = True
 
     headers = {
         "Authorization": f"Bearer {CONFIG.llm_api_key}",

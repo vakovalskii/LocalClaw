@@ -374,7 +374,13 @@
     padding: 8px 12px;
     background: var(--bg1);
     font-size: 11px;
+    cursor: pointer;
+    user-select: none;
   }
+  .trace-header:hover { background: var(--bg2); }
+  .trace-toggle { font-size: 9px; color: var(--text3); transition: transform 0.15s; }
+  .trace-event.expanded .trace-toggle { transform: rotate(90deg); }
+  .trace-body { display: none; }
 
   .trace-type {
     font-weight: 700;
@@ -403,7 +409,9 @@
     overflow-y: auto;
     border-top: 1px solid var(--border);
     scrollbar-width: thin;
+    display: none;
   }
+  .trace-event.expanded .trace-body { display: block; }
 
   /* ── Tasks ── */
   #tasks-page { padding: 24px; overflow-y: auto; gap: 20px; }
@@ -785,14 +793,18 @@
     background: var(--bg3);
     border: 1px solid var(--border);
     color: var(--text2);
-    padding: 2px 7px;
-    font-size: 10px;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    font-size: 12px;
     font-family: var(--font);
     border-radius: 2px;
     cursor: pointer;
     transition: all 0.15s;
-    font-weight: 600;
-    letter-spacing: 0.04em;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
   }
 
   .kb-btn:hover { background: var(--bg1); color: var(--text); border-color: var(--border2); }
@@ -1206,8 +1218,12 @@
     <button id="agents-panel-close" style="background:none;border:none;color:var(--text2);cursor:pointer;font-size:16px;">✕</button>
   </div>
   <div id="agents-list" style="flex:1;overflow-y:auto;scrollbar-width:thin;"></div>
-  <div style="padding:12px;border-top:1px solid var(--border);display:flex;gap:8px;">
-    <input class="form-input" id="new-agent-name" placeholder="New agent name..." style="flex:1;font-size:11px;height:32px;padding:0 8px;">
+  <div style="padding:12px;border-top:1px solid var(--border);display:flex;gap:8px;flex-wrap:wrap;">
+    <input class="form-input" id="new-agent-name" placeholder="New agent name..." style="flex:1;min-width:120px;font-size:11px;height:32px;padding:0 8px;">
+    <select class="form-input" id="new-agent-role" style="font-size:11px;height:32px;width:110px;">
+      <option value="worker">Worker</option>
+      <option value="orchestrator">Orchestrator</option>
+    </select>
     <button class="btn" id="new-agent-btn" style="height:32px;padding:0 12px;font-size:10px;">+ ADD</button>
   </div>
 </div>
@@ -1215,7 +1231,8 @@
 <!-- New Task Modal -->
 <div class="modal-overlay" id="task-modal">
   <div class="modal">
-    <div class="modal-title">NEW TASK</div>
+    <div class="modal-title" id="task-modal-title">NEW TASK</div>
+    <input type="hidden" id="kt-id" value="">
     <div class="form-field">
       <div class="form-label">Title</div>
       <input class="form-input" id="kt-title" placeholder="Task title">
@@ -1239,9 +1256,14 @@
         </select>
       </div>
     </div>
+    <div class="form-field">
+      <div class="form-label">Repeat every (minutes, 0 = once)</div>
+      <input class="form-input" type="number" id="kt-repeat" min="0" value="0" style="width:120px;">
+      <span style="font-size:10px;color:var(--text3);margin-left:8px;">e.g. 5 — перезапускать каждые 5 минут</span>
+    </div>
     <div class="modal-actions">
       <button class="btn btn-ghost" id="task-modal-cancel">CANCEL</button>
-      <button class="btn" id="task-modal-save">CREATE TASK</button>
+      <button class="btn" id="task-modal-save">SAVE</button>
     </div>
   </div>
 </div>
@@ -1687,8 +1709,9 @@ async function loadTrace(sessionKey) {
       const el = document.createElement('div');
       el.className = 'trace-event';
       el.innerHTML = `
-        <div class="trace-header">
-          <span class="trace-type ${ev.type}">${ev.type}</span>
+        <div class="trace-header" onclick="this.parentElement.classList.toggle('expanded')">
+          <span class="trace-toggle">▶</span>
+          <span class="trace-type ${escHtml(ev.type)}">${escHtml(ev.type)}</span>
           <span style="color:var(--text2)">${formatEventSummary(ev)}</span>
           <span class="trace-ts">${fmtTime(ev.at)}</span>
         </div>
@@ -2129,9 +2152,12 @@ function buildCard(task, col) {
   const agentColor = task.agent_color || '#555';
   const agentEmoji = task.agent_emoji || '';
   const agentName  = task.agent_name  || '';
+  const agentRole  = task.agent_role  || 'worker';
 
+  const roleMark = agentName && agentRole === 'orchestrator'
+    ? `<span style="font-size:9px;font-weight:700;color:var(--blue);margin-left:3px;" title="Orchestrator">◈</span>` : '';
   const agentBadge = agentName
-    ? `<span class="kb-agent-badge" style="color:${agentColor};border:1px solid ${agentColor}33;">${agentEmoji} ${agentName}</span>`
+    ? `<span class="kb-agent-badge" style="color:${agentColor};border:1px solid ${agentColor}33;">${agentEmoji} ${agentName}${roleMark}</span>`
     : '';
 
   const statusCls = {'idle':'idle','running':'running','done':'done','error':'error'}[task.status] || 'idle';
@@ -2146,26 +2172,29 @@ function buildCard(task, col) {
     ? `<button class="kb-btn" onclick="moveTask(${task.id},'${COLS[colIdx+1]}')">→</button>` : '';
 
   const runBtn = (col !== 'done' && task.status !== 'running')
-    ? `<button class="kb-btn run" onclick="runKbTask(${task.id})">▶ RUN</button>` : '';
+    ? `<button class="kb-btn run" onclick="runKbTask(${task.id})" title="Run agent">▶</button>` : '';
   const stopBtn = task.status === 'running'
-    ? `<button class="kb-btn del" onclick="cancelKbTask(${task.id})" style="color:var(--red);border-color:var(--red)40;">■ STOP</button>` : '';
+    ? `<button class="kb-btn del" onclick="cancelKbTask(${task.id})" title="Stop">■</button>` : '';
   const artifactBtn = task.artifact
-    ? `<button class="kb-btn artifact" onclick="viewArtifact(${task.id})">◉ RESULT</button>` : '';
-  const delBtn = `<button class="kb-btn del" onclick="deleteKbTask(${task.id})">✕</button>`;
+    ? `<button class="kb-btn artifact" onclick="viewArtifact(${task.id})" title="View result">◉</button>` : '';
+  const editBtn = `<button class="kb-btn" onclick="openEditTaskModal(kbTasks.find(t=>t.id===${task.id}))" title="Edit" style="color:var(--text2);">✎</button>`;
+  const delBtn = `<button class="kb-btn del" onclick="deleteKbTask(${task.id})" title="Delete">✕</button>`;
 
   const descHtml = task.description
     ? `<div class="kb-card-desc">${escHtml(task.description)}</div>` : '';
+  const repeatBadge = task.repeat_minutes > 0
+    ? `<span style="font-size:9px;color:var(--green);margin-left:4px;" title="Repeat every ${task.repeat_minutes}m">↺${task.repeat_minutes}m</span>` : '';
 
   card.innerHTML = `
     <div class="kb-card-top">
       ${agentBadge}
-      <div class="kb-card-title">${escHtml(task.title)}</div>
+      <div class="kb-card-title">${escHtml(task.title)}${repeatBadge}</div>
     </div>
     ${descHtml}
     <div class="kb-card-footer">
       ${statusHtml}
       <div class="kb-card-actions">
-        ${leftBtn}${rightBtn}${runBtn}${stopBtn}${artifactBtn}${delBtn}
+        ${leftBtn}${rightBtn}${runBtn}${stopBtn}${editBtn}${artifactBtn}${delBtn}
       </div>
     </div>`;
   return card;
@@ -2231,10 +2260,26 @@ document.querySelectorAll('.kb-add-btn').forEach(btn => {
 
 function openNewTaskModal(col) {
   kbNewTaskCol = col;
+  document.getElementById('kt-id').value = '';
   document.getElementById('kt-col').value = col;
   document.getElementById('kt-title').value = '';
   document.getElementById('kt-desc').value = '';
+  document.getElementById('kt-repeat').value = '0';
+  document.getElementById('task-modal-title').textContent = 'NEW TASK';
   populateAgentSelect();
+  document.getElementById('task-modal').classList.add('open');
+  setTimeout(() => document.getElementById('kt-title').focus(), 50);
+}
+
+function openEditTaskModal(task) {
+  document.getElementById('kt-id').value = task.id;
+  document.getElementById('kt-col').value = task.column;
+  document.getElementById('kt-title').value = task.title;
+  document.getElementById('kt-desc').value = task.description || '';
+  document.getElementById('kt-repeat').value = task.repeat_minutes || 0;
+  document.getElementById('task-modal-title').textContent = 'EDIT TASK';
+  populateAgentSelect();
+  document.getElementById('kt-agent').value = task.agent_id || '';
   document.getElementById('task-modal').classList.add('open');
   setTimeout(() => document.getElementById('kt-title').focus(), 50);
 }
@@ -2257,11 +2302,21 @@ document.getElementById('task-modal-save').addEventListener('click', async () =>
   const agentId = document.getElementById('kt-agent').value;
   const desc    = document.getElementById('kt-desc').value.trim();
   const col     = document.getElementById('kt-col').value;
-  await api('POST', '/kanban/tasks', {
-    title, description: desc,
-    agent_id: agentId ? parseInt(agentId) : null,
-    column: col,
-  });
+  const repeat  = parseInt(document.getElementById('kt-repeat').value) || 0;
+  const editId  = document.getElementById('kt-id').value;
+  if (editId) {
+    await api('PATCH', `/kanban/tasks/${editId}`, {
+      title, description: desc,
+      agent_id: agentId ? parseInt(agentId) : null,
+      column: col, repeat_minutes: repeat,
+    });
+  } else {
+    await api('POST', '/kanban/tasks', {
+      title, description: desc,
+      agent_id: agentId ? parseInt(agentId) : null,
+      column: col, repeat_minutes: repeat,
+    });
+  }
   document.getElementById('task-modal').classList.remove('open');
   await loadKanban();
 });
@@ -2289,7 +2344,8 @@ function renderAgentsPanel() {
           <span>${a.emoji}</span>
         </div>
         <span style="font-weight:700;font-size:12px;flex:1;">${escHtml(a.name)}</span>
-        <span style="font-size:10px;color:var(--text3);">▾</span>
+        <span style="font-size:9px;font-weight:700;letter-spacing:0.06em;padding:2px 6px;border-radius:2px;${a.role === 'orchestrator' ? 'background:#1e293b;color:var(--blue)' : 'background:#1a1a1a;color:var(--text3)'};">${(a.role||'worker').toUpperCase()}</span>
+        <span style="font-size:10px;color:var(--text3);margin-left:4px;">▾</span>
       </div>
       <div class="agent-card-body">
         <div class="form-field">
@@ -2304,6 +2360,13 @@ function renderAgentsPanel() {
           <div class="form-field" style="flex:1;">
             <div class="form-label">Color</div>
             <input type="color" id="ae-color-${a.id}" value="${a.color}" style="width:50px;height:32px;border:1px solid var(--border);border-radius:2px;background:var(--bg2);cursor:pointer;">
+          </div>
+          <div class="form-field" style="flex:1;">
+            <div class="form-label">Role</div>
+            <select class="form-input" id="ae-role-${a.id}" style="font-size:11px;height:32px;">
+              <option value="worker" ${(a.role||'worker')==='worker'?'selected':''}>Worker</option>
+              <option value="orchestrator" ${a.role==='orchestrator'?'selected':''}>Orchestrator</option>
+            </select>
           </div>
         </div>
         <div class="form-field">
@@ -2327,7 +2390,8 @@ async function saveAgent(id) {
   const emoji  = document.getElementById(`ae-emoji-${id}`).value.trim();
   const color  = document.getElementById(`ae-color-${id}`).value;
   const prompt = document.getElementById(`ae-prompt-${id}`).value;
-  await api('PATCH', `/agents/${id}`, { name, emoji, color, system_prompt: prompt });
+  const role   = document.getElementById(`ae-role-${id}`).value;
+  await api('PATCH', `/agents/${id}`, { name, emoji, color, system_prompt: prompt, role });
   await loadKanban();
   renderAgentsPanel();
   toast('Agent saved');
@@ -2345,7 +2409,8 @@ document.getElementById('new-agent-btn').addEventListener('click', async () => {
   const name = document.getElementById('new-agent-name').value.trim();
   if (!name) return;
   if (kbAgents.length >= 10) { toast('Max 10 agents'); return; }
-  await api('POST', '/agents', { name, emoji: '🤖', color: '#' + Math.floor(Math.random()*0xffffff).toString(16).padStart(6,'0'), system_prompt: '' });
+  const role = document.getElementById('new-agent-role').value;
+  await api('POST', '/agents', { name, emoji: role === 'orchestrator' ? '🎯' : '🤖', color: '#' + Math.floor(Math.random()*0xffffff).toString(16).padStart(6,'0'), system_prompt: '', role });
   document.getElementById('new-agent-name').value = '';
   await loadKanban();
   renderAgentsPanel();

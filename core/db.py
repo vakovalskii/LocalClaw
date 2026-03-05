@@ -66,6 +66,7 @@ def init_db():
             color TEXT NOT NULL DEFAULT '#f59e0b',
             emoji TEXT NOT NULL DEFAULT '🤖',
             system_prompt TEXT NOT NULL DEFAULT '',
+            role TEXT NOT NULL DEFAULT 'worker',
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
 
@@ -78,6 +79,7 @@ def init_db():
             position INTEGER NOT NULL DEFAULT 0,
             artifact TEXT,
             status TEXT NOT NULL DEFAULT 'idle',
+            repeat_minutes INTEGER NOT NULL DEFAULT 0,
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
             updated_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
@@ -90,6 +92,18 @@ def init_db():
         conn.execute("ALTER TABLE messages ADD COLUMN full_msg TEXT")
         conn.commit()
         core_logger.info("DB migration: added full_msg column")
+    except Exception:
+        pass  # Column already exists
+    try:
+        conn.execute("ALTER TABLE agents ADD COLUMN role TEXT NOT NULL DEFAULT 'worker'")
+        conn.commit()
+        core_logger.info("DB migration: added role column to agents")
+    except Exception:
+        pass  # Column already exists
+    try:
+        conn.execute("ALTER TABLE kanban_tasks ADD COLUMN repeat_minutes INTEGER NOT NULL DEFAULT 0")
+        conn.commit()
+        core_logger.info("DB migration: added repeat_minutes column to kanban_tasks")
     except Exception:
         pass  # Column already exists
     conn.close()
@@ -221,12 +235,12 @@ def get_agents() -> list:
         conn.close()
 
 
-def create_agent(name: str, color: str, emoji: str, system_prompt: str) -> dict:
+def create_agent(name: str, color: str, emoji: str, system_prompt: str, role: str = "worker") -> dict:
     conn = get_db()
     try:
         cur = conn.execute(
-            "INSERT INTO agents (name, color, emoji, system_prompt) VALUES (?, ?, ?, ?)",
-            (name, color, emoji, system_prompt),
+            "INSERT INTO agents (name, color, emoji, system_prompt, role) VALUES (?, ?, ?, ?, ?)",
+            (name, color, emoji, system_prompt, role),
         )
         conn.commit()
         row = conn.execute("SELECT * FROM agents WHERE id = ?", (cur.lastrowid,)).fetchone()
@@ -236,7 +250,7 @@ def create_agent(name: str, color: str, emoji: str, system_prompt: str) -> dict:
 
 
 def update_agent(agent_id: int, **fields) -> dict | None:
-    allowed = {"name", "color", "emoji", "system_prompt"}
+    allowed = {"name", "color", "emoji", "system_prompt", "role"}
     updates = {k: v for k, v in fields.items() if k in allowed and v is not None}
     if not updates:
         return None
@@ -266,7 +280,7 @@ def get_kanban_tasks() -> list:
     conn = get_db()
     try:
         rows = conn.execute("""
-            SELECT kt.*, a.name as agent_name, a.color as agent_color, a.emoji as agent_emoji
+            SELECT kt.*, a.name as agent_name, a.color as agent_color, a.emoji as agent_emoji, a.role as agent_role, a.system_prompt as agent_system_prompt
             FROM kanban_tasks kt
             LEFT JOIN agents a ON kt.agent_id = a.id
             ORDER BY kt.column, kt.position, kt.id
@@ -276,19 +290,19 @@ def get_kanban_tasks() -> list:
         conn.close()
 
 
-def create_kanban_task(title: str, description: str, agent_id: int | None, column: str = "backlog") -> dict:
+def create_kanban_task(title: str, description: str, agent_id: int | None, column: str = "backlog", repeat_minutes: int = 0) -> dict:
     conn = get_db()
     try:
         pos = conn.execute(
             "SELECT COALESCE(MAX(position), -1) + 1 FROM kanban_tasks WHERE column = ?", (column,)
         ).fetchone()[0]
         cur = conn.execute(
-            "INSERT INTO kanban_tasks (title, description, agent_id, column, position) VALUES (?, ?, ?, ?, ?)",
-            (title, description, agent_id, column, pos),
+            "INSERT INTO kanban_tasks (title, description, agent_id, column, position, repeat_minutes) VALUES (?, ?, ?, ?, ?, ?)",
+            (title, description, agent_id, column, pos, repeat_minutes),
         )
         conn.commit()
         row = conn.execute("""
-            SELECT kt.*, a.name as agent_name, a.color as agent_color, a.emoji as agent_emoji
+            SELECT kt.*, a.name as agent_name, a.color as agent_color, a.emoji as agent_emoji, a.role as agent_role, a.system_prompt as agent_system_prompt
             FROM kanban_tasks kt LEFT JOIN agents a ON kt.agent_id = a.id
             WHERE kt.id = ?
         """, (cur.lastrowid,)).fetchone()
@@ -298,7 +312,7 @@ def create_kanban_task(title: str, description: str, agent_id: int | None, colum
 
 
 def update_kanban_task(task_id: int, **fields) -> dict | None:
-    allowed = {"title", "description", "agent_id", "column", "position", "artifact", "status"}
+    allowed = {"title", "description", "agent_id", "column", "position", "artifact", "status", "repeat_minutes"}
     updates = {k: v for k, v in fields.items() if k in allowed}
     if not updates:
         return None
@@ -311,7 +325,7 @@ def update_kanban_task(task_id: int, **fields) -> dict | None:
         conn.execute(f"UPDATE kanban_tasks SET {sets} WHERE id = ?", (*reg.values(), task_id))
         conn.commit()
         row = conn.execute("""
-            SELECT kt.*, a.name as agent_name, a.color as agent_color, a.emoji as agent_emoji
+            SELECT kt.*, a.name as agent_name, a.color as agent_color, a.emoji as agent_emoji, a.role as agent_role, a.system_prompt as agent_system_prompt
             FROM kanban_tasks kt LEFT JOIN agents a ON kt.agent_id = a.id
             WHERE kt.id = ?
         """, (task_id,)).fetchone()

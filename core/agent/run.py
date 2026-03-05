@@ -144,23 +144,19 @@ async def run_agent(
             "tool_calls": tool_calls,
         })
 
-        # Execute each tool call
-        tool_results_msgs = []
-        for tc in tool_calls:
+        # Execute tool calls — parallel if multiple
+        async def _exec_one(tc: dict) -> tuple[dict, dict]:
             tool_id = tc["id"]
             fn = tc["function"]
             tool_name = fn["name"]
-
             try:
                 args = json.loads(fn.get("arguments", "{}"))
             except json.JSONDecodeError:
                 args = {}
 
             agent_logger.info(f"[{session_key}] Tool: {tool_name}({args})")
-
             if on_event:
                 await on_event("tool_start", {"name": tool_name, "args": args})
-
             log_event(session_key, "tool_call", {"name": tool_name, "args": args})
 
             ctx = ToolContext(cwd=cwd, session_id=session_key, history_ref=messages)
@@ -172,11 +168,8 @@ async def run_agent(
                 "result": result.output if result.success else result.error,
                 "success": result.success,
             }
-            tool_events.append(event_data)
-
             if on_event:
                 await on_event("tool_done", event_data)
-
             log_event(session_key, "tool_result", event_data)
 
             # Warn about injection in fetched content
@@ -190,11 +183,14 @@ async def run_agent(
                 )
 
             content = result.output if result.success else f"ERROR: {result.error}"
-            tool_results_msgs.append({
-                "role": "tool",
-                "tool_call_id": tool_id,
-                "content": content,
-            })
+            msg = {"role": "tool", "tool_call_id": tool_id, "content": content}
+            return event_data, msg
+
+        results = await asyncio.gather(*[_exec_one(tc) for tc in tool_calls])
+        tool_results_msgs = []
+        for event_data, msg in results:
+            tool_events.append(event_data)
+            tool_results_msgs.append(msg)
 
         messages.extend(tool_results_msgs)
 
