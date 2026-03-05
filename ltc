@@ -169,7 +169,14 @@ except: pass
 
 cmd_test() {
   local target="${1:-all}"
+  shift 2>/dev/null || true
   [[ -d "$VENV" ]] || die "Venv not found at $VENV"
+
+  # Check for --keep flag
+  local keep=""
+  for arg in "$@"; do
+    [[ "$arg" == "--keep" ]] && keep=1
+  done
 
   # Ensure pytest is installed
   if ! "$VENV/bin/python" -m pytest --version &>/dev/null; then
@@ -180,18 +187,18 @@ cmd_test() {
   echo -e "${BOLD}Running tests...${NC}\n"
   case "$target" in
     all)
-      "$VENV/bin/python" -m pytest "$APP_DIR/tests/" -v -s --tb=short
+      LTC_KEEP="$keep" "$VENV/bin/python" -m pytest "$APP_DIR/tests/" -v -s --tb=short
       ;;
     kanban)
-      "$VENV/bin/python" -m pytest "$APP_DIR/tests/test_kanban_e2e.py" -v -s --tb=short
+      LTC_KEEP="$keep" "$VENV/bin/python" -m pytest "$APP_DIR/tests/test_kanban_e2e.py" -v -s --tb=short
       ;;
     seed)
-      "$VENV/bin/python" -m pytest "$APP_DIR/tests/test_seed_e2e.py" -v -s --tb=short
+      LTC_KEEP="$keep" "$VENV/bin/python" -m pytest "$APP_DIR/tests/test_seed_e2e.py" -v -s --tb=short
       ;;
     *)
       # Try as a file path
       if [[ -f "$target" ]]; then
-        "$VENV/bin/python" -m pytest "$target" -v -s --tb=short
+        LTC_KEEP="$keep" "$VENV/bin/python" -m pytest "$target" -v -s --tb=short
       else
         die "Unknown test target: $target (use 'all', 'kanban', 'seed', or a file path)"
       fi
@@ -244,7 +251,7 @@ cmd_help() {
   echo -e "  ${GREEN}ltc restart${NC}            Restart services"
   echo -e "  ${GREEN}ltc status${NC}             Show status"
   echo -e "  ${GREEN}ltc logs${NC} [core|bot]    Tail logs (default: core)"
-  echo -e "  ${GREEN}ltc test${NC} [all|kanban|seed]  Run tests"
+  echo -e "  ${GREEN}ltc test${NC} [all|kanban|seed] [--keep]  Run tests"
   echo -e "  ${GREEN}ltc seed${NC} [--reset]     Seed demo kanban data"
   echo -e "  ${GREEN}ltc update${NC}             Pull latest code & restart"
   echo -e "  ${GREEN}ltc build${NC}              Rebuild frontend"

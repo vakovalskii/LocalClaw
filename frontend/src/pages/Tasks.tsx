@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
 import { useToast } from '../components/Toast';
+import { ConfirmDialog } from '../components/Dialog';
 import { fmtTime } from '../utils';
 
 interface Task {
@@ -19,6 +20,7 @@ export default function Tasks() {
   const [interval, setInterval_] = useState('');
   const [prompt, setPrompt] = useState('');
   const [loading, setLoading] = useState(true);
+  const [deleteId, setDeleteId] = useState<number | null>(null);
 
   const load = async () => {
     try {
@@ -44,7 +46,6 @@ export default function Tasks() {
   };
 
   const del = async (id: number) => {
-    if (!confirm('Delete this task?')) return;
     try {
       await api('DELETE', `/tasks/${id}`);
       toast('Task deleted');
@@ -123,7 +124,7 @@ export default function Tasks() {
                       TOGGLE
                     </button>
                     <button
-                      onClick={() => del(t.id)}
+                      onClick={() => setDeleteId(t.id)}
                       className="px-2 py-1 text-[10px] border border-border2 text-red hover:bg-red/10 transition-colors"
                     >
                       DEL
@@ -169,6 +170,13 @@ export default function Tasks() {
           ADD TASK
         </button>
       </div>
+      <ConfirmDialog
+        open={deleteId !== null}
+        message="Delete this task?"
+        confirmLabel="Delete"
+        onConfirm={() => { if (deleteId !== null) del(deleteId); setDeleteId(null); }}
+        onCancel={() => setDeleteId(null)}
+      />
     </div>
   );
 }

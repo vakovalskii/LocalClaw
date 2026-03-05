@@ -728,7 +728,7 @@ async def list_boards(_=Depends(_check_auth)):
 
 @app.post("/kanban/boards")
 async def create_board(req: KanbanBoardCreateRequest, _=Depends(_check_auth)):
-    return create_kanban_board(req.name, req.emoji)
+    return {"board": create_kanban_board(req.name, req.emoji)}
 
 
 @app.patch("/kanban/boards/{board_id}")
@@ -757,9 +757,20 @@ async def list_kanban(board_id: int = Query(default=1), _=Depends(_check_auth)):
     return {"tasks": get_kanban_tasks(board_id)}
 
 
+@app.get("/kanban/boards/{board_id}/tasks")
+async def list_board_tasks(board_id: int, _=Depends(_check_auth)):
+    return {"tasks": get_kanban_tasks(board_id)}
+
+
 @app.post("/kanban/tasks")
 async def create_kanban_task_endpoint(req: KanbanTaskCreateRequest, _=Depends(_check_auth)):
     task = create_kanban_task(req.title, req.description, req.agent_id, req.column, req.repeat_minutes, req.board_id)
+    return task
+
+
+@app.post("/kanban/boards/{board_id}/tasks")
+async def create_board_task_endpoint(board_id: int, req: KanbanTaskCreateRequest, _=Depends(_check_auth)):
+    task = create_kanban_task(req.title, req.description, req.agent_id, req.column, req.repeat_minutes, board_id)
     return task
 
 

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
 import { useToast } from '../components/Toast';
+import { ConfirmDialog } from '../components/Dialog';
 import { fmtBytes } from '../utils';
 
 interface FileEntry {
@@ -17,6 +18,7 @@ export default function Files() {
   const [content, setContent] = useState('');
   const [dirty, setDirty] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const loadDir = async (path: string) => {
     try {
@@ -56,7 +58,6 @@ export default function Files() {
 
   const deleteFile = async () => {
     if (!filePath) return;
-    if (!confirm(`Delete ${filePath}?`)) return;
     try {
       await api('DELETE', `/file?path=${encodeURIComponent(filePath)}`);
       toast('Deleted');
@@ -145,7 +146,7 @@ export default function Files() {
                 SAVE
               </button>
               <button
-                onClick={deleteFile}
+                onClick={() => setShowDeleteConfirm(true)}
                 className="border border-border2 text-red text-[10px] px-3 py-1 hover:bg-red/10 transition-colors"
               >
                 DELETE
@@ -172,6 +173,13 @@ export default function Files() {
           </div>
         )}
       </div>
+      <ConfirmDialog
+        open={showDeleteConfirm}
+        message={`Delete ${filePath}?`}
+        confirmLabel="Delete"
+        onConfirm={() => { setShowDeleteConfirm(false); deleteFile(); }}
+        onCancel={() => setShowDeleteConfirm(false)}
+      />
     </div>
   );
 }

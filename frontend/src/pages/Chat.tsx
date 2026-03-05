@@ -41,26 +41,44 @@ export default function Chat() {
         }
         if (!chatId) return;
         const d = await api<{ messages: ChatMessage[] }>('GET', `/history?chat_id=${chatId}`);
-        const history = (d.messages || []).filter(m => m.content && m.content !== 'null');
+        const history = d.messages || [];
         const display: DisplayMessage[] = [];
+
+        // Build a map of tool_call_id -> tool result content
+        const toolResults = new Map<string, string>();
+        for (const msg of history) {
+          if (msg.role === 'tool' && msg.tool_call_id) {
+            toolResults.set(msg.tool_call_id, msg.content || '');
+          }
+        }
+
         for (const msg of history) {
           if (msg.role === 'user') {
-            display.push({ role: 'user', content: msg.content, tools: [] });
-          } else if (msg.role === 'assistant') {
-            // Try to parse tool events from content if JSON array
-            let content = msg.content;
-            let tools: ToolEvent[] = [];
-            try {
-              const parsed = JSON.parse(content);
-              if (Array.isArray(parsed)) {
-                tools = parsed;
-                content = '';
-              }
-            } catch {
-              // not JSON, use as-is
+            if (msg.content && msg.content !== 'null') {
+              display.push({ role: 'user', content: msg.content, tools: [] });
             }
+          } else if (msg.role === 'assistant') {
+            const content = (msg.content && msg.content !== 'null') ? msg.content : '';
+            const tools: ToolEvent[] = [];
+
+            // Extract tool events from tool_calls
+            if (msg.tool_calls && msg.tool_calls.length > 0) {
+              for (const tc of msg.tool_calls) {
+                const fn = tc.function;
+                let args: any = {};
+                try { args = JSON.parse(fn.arguments || '{}'); } catch { /* */ }
+                const result = toolResults.get(tc.id) || '';
+                tools.push({
+                  name: fn.name,
+                  args,
+                  success: !result.startsWith('ERROR:'),
+                  result,
+                });
+              }
+            }
+
+            // Merge consecutive assistant messages (tool iteration + final answer)
             if (display.length > 0 && display[display.length - 1].role === 'assistant') {
-              // Merge with previous assistant message
               const prev = display[display.length - 1];
               if (content) prev.content += (prev.content ? '\n' : '') + content;
               prev.tools.push(...tools);
@@ -68,6 +86,7 @@ export default function Chat() {
               display.push({ role: 'assistant', content, tools });
             }
           }
+          // Skip 'tool' role messages — already extracted above
         }
         setMessages(display);
         scrollToBottom();
@@ -119,6 +138,7 @@ export default function Chat() {
     setStreamText('');
     setStreamTools([]);
     setRunningTool('');
+    scrollToBottom();
 
     const controller = new AbortController();
     abortRef.current = controller;
@@ -334,14 +354,14 @@ export default function Chat() {
                   dangerouslySetInnerHTML={{ __html: renderMarkdown(streamText) }}
                 />
               ) : (
-                <div className="flex items-center gap-2 text-text3 text-xs">
-                  <span className="w-1.5 h-1.5 rounded-full bg-amber animate-pulse-dot" />
+                <div className="flex items-center gap-2 text-text2 text-xs">
+                  <span className="w-2 h-2 rounded-full bg-amber animate-pulse-dot" />
                   {runningTool ? `running ${runningTool}...` : 'thinking...'}
                 </div>
               )}
               {runningTool && streamText && (
-                <div className="flex items-center gap-2 text-text3 text-xs mt-2">
-                  <span className="w-1.5 h-1.5 rounded-full bg-amber animate-pulse-dot" />
+                <div className="flex items-center gap-2 text-text2 text-xs mt-2">
+                  <span className="w-2 h-2 rounded-full bg-amber animate-pulse-dot" />
                   running {runningTool}...
                 </div>
               )}

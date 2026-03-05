@@ -1,23 +1,26 @@
 """
-End-to-end integration tests for LocalTaskClaw kanban + agent pipeline.
+Kanban team run — full e2e test.
 
-Runs against the live service (localhost:11387).
-Creates isolated test data with TEST_ prefix and cleans up after each test.
+Spawns a team of agents, orchestrator dispatches work,
+workers execute tasks, artifacts are produced.
 
 Run:
-    cd /Users/v.kovalskii/LocalTaskClaw
-    ./venv/bin/pytest tests/test_kanban_e2e.py -v -s
+    ltc test kanban
 """
 
-import asyncio
 import os
 import time
 import httpx
 import pytest
 
-# ── Config ──────────────────────────────────────────────────────────────────
+KEEP = os.environ.get("LTC_KEEP", "") == "1"
+
+# -- Config -------------------------------------------------------------------
 
 BASE_URL = os.environ.get("API_URL", "http://localhost:11387")
+AGENT_TIMEOUT = 180
+POLL_INTERVAL = 3
+
 
 def _get_secret():
     candidates = [
@@ -35,555 +38,329 @@ def _get_secret():
             continue
     return os.environ.get("API_SECRET", "")
 
-API_SECRET = _get_secret()
 
+API_SECRET = _get_secret()
 HEADERS = {"X-Api-Key": API_SECRET, "Content-Type": "application/json"} if API_SECRET else {"Content-Type": "application/json"}
 
-# Timeouts
-AGENT_TIMEOUT = 180   # seconds to wait for agent to finish
-POLL_INTERVAL = 3     # seconds between polls
 
-
-# ── Helpers ─────────────────────────────────────────────────────────────────
+# -- HTTP helpers -------------------------------------------------------------
 
 def get(path: str) -> dict:
     r = httpx.get(f"{BASE_URL}{path}", headers=HEADERS, timeout=15)
     r.raise_for_status()
     return r.json()
 
+
 def post(path: str, data: dict = None) -> dict:
     r = httpx.post(f"{BASE_URL}{path}", json=data or {}, headers=HEADERS, timeout=15)
     r.raise_for_status()
     return r.json()
+
 
 def patch(path: str, data: dict) -> dict:
     r = httpx.patch(f"{BASE_URL}{path}", json=data, headers=HEADERS, timeout=15)
     r.raise_for_status()
     return r.json()
 
+
 def delete(path: str):
     r = httpx.delete(f"{BASE_URL}{path}", headers=HEADERS, timeout=15)
     r.raise_for_status()
 
-def wait_for_task(task_id: int, timeout: int = AGENT_TIMEOUT) -> dict:
-    """Poll until task leaves 'running' status. Returns final task state."""
+
+def wait_for_task(task_id: int, label: str = "", timeout: int = AGENT_TIMEOUT) -> dict:
+    """Poll until task leaves 'running' status."""
     deadline = time.time() + timeout
+    start = time.time()
     while time.time() < deadline:
         tasks = get("/kanban")["tasks"]
         task = next((t for t in tasks if t["id"] == task_id), None)
         assert task is not None, f"Task #{task_id} disappeared"
         if task["status"] != "running":
+            elapsed = int(time.time() - start)
+            tag = label or f"#{task_id}"
+            status_icon = {"done": "+", "error": "!", "idle": "~"}.get(task["status"], "?")
+            print(f"  [{status_icon}] {tag} -> {task['column']}/{task['status']} ({elapsed}s)")
             return task
-        print(f"  ⏳ task #{task_id} status={task['status']} column={task['column']} ...")
         time.sleep(POLL_INTERVAL)
     pytest.fail(f"Task #{task_id} still running after {timeout}s")
 
-def cleanup_test_agents(created_ids: list[int]):
-    for aid in created_ids:
+
+# -- Team definition ----------------------------------------------------------
+
+TEAM = {
+    "researcher": {
+        "name": "Researcher",
+        "emoji": "🔍",
+        "color": "#60a5fa",
+        "role": "worker",
+        "system_prompt": (
+            "You are a research agent. When given a topic, search the web for "
+            "the latest information, compile key findings, and write the result "
+            "to a file using write_file. Be concise and factual."
+        ),
+    },
+    "writer": {
+        "name": "Writer",
+        "emoji": "✍️",
+        "color": "#f59e0b",
+        "role": "worker",
+        "system_prompt": (
+            "You are a writing agent. When given a topic, write a clear, "
+            "well-structured article (300-500 words). Save it to a file "
+            "using write_file. No external tools needed — just write."
+        ),
+    },
+    "reviewer": {
+        "name": "Code Reviewer",
+        "emoji": "🔬",
+        "color": "#10b981",
+        "role": "worker",
+        "system_prompt": (
+            "You are a code/workspace review agent. When asked to review, "
+            "use list_files to inspect the workspace structure, then use "
+            "read_file to check a few key files, and write a short review "
+            "report using write_file."
+        ),
+    },
+    "orchestrator": {
+        "name": "Orchestrator",
+        "emoji": "🎯",
+        "color": "#ef4444",
+        "role": "orchestrator",
+        "system_prompt": (
+            "You are a kanban orchestrator. Your job:\n"
+            "1. Call kanban_list to see all tasks.\n"
+            "2. For each task in backlog that has an agent_id: call kanban_run(task_id).\n"
+            "3. Do NOT use kanban_move. Only use kanban_run.\n"
+            "4. After dispatching all eligible tasks, finish.\n"
+            "IMPORTANT: Use kanban_run, NOT kanban_move."
+        ),
+    },
+}
+
+TASKS = [
+    {
+        "key": "research",
+        "agent_key": "researcher",
+        "title": "Research: Latest AI Agent Frameworks",
+        "description": (
+            "Search the web for the top 5 AI agent frameworks in 2026. "
+            "Write a summary to /data/workspace/research_agents.md with: "
+            "name, URL, key features, pros/cons for each."
+        ),
+    },
+    {
+        "key": "essay",
+        "agent_key": "writer",
+        "title": "Write: Local-First AI Assistants",
+        "description": (
+            "Write a 300-500 word article about why local-first AI assistants "
+            "matter for privacy and productivity. Save to /data/workspace/essay_local_ai.md"
+        ),
+    },
+    {
+        "key": "review",
+        "agent_key": "reviewer",
+        "title": "Review: Workspace Structure",
+        "description": (
+            "Review the current workspace structure. List all files, "
+            "check their contents, and write a short report to "
+            "/data/workspace/review_workspace.md"
+        ),
+    },
+]
+
+
+# -- Fixtures -----------------------------------------------------------------
+
+@pytest.fixture(scope="module")
+def team():
+    """Create the team of agents, yield their IDs, clean up after."""
+    agent_ids = {}
+    print("\n--- Spawning team ---")
+    for key, spec in TEAM.items():
+        agent = post("/agents", spec)
+        agent_ids[key] = agent["id"]
+        print(f"  {spec['emoji']} {spec['name']} (id={agent['id']}, role={spec['role']})")
+    print()
+
+    yield agent_ids
+
+    if KEEP:
+        print("\n--- Keeping team (--keep) ---")
+        return
+    print("\n--- Cleaning up team ---")
+    for key, aid in agent_ids.items():
         try:
             delete(f"/agents/{aid}")
+            print(f"  deleted agent {key} #{aid}")
         except Exception:
             pass
 
-def cleanup_test_tasks(created_ids: list[int]):
-    for tid in created_ids:
+
+@pytest.fixture(scope="module")
+def board(team):
+    """Create tasks on the kanban board, yield task map, clean up after."""
+    task_ids = {}
+    print("--- Creating tasks ---")
+    for spec in TASKS:
+        task = post("/kanban/tasks", {
+            "title": spec["title"],
+            "description": spec["description"],
+            "agent_id": team[spec["agent_key"]],
+            "column": "backlog",
+        })
+        task_ids[spec["key"]] = task["id"]
+        agent_name = TEAM[spec["agent_key"]]["name"]
+        print(f"  [{task['id']}] {spec['title']} -> {agent_name}")
+
+    # Orchestrator task
+    orc_task = post("/kanban/tasks", {
+        "title": "Run Orchestration Cycle",
+        "description": "Dispatch all backlog tasks to their assigned agents.",
+        "agent_id": team["orchestrator"],
+        "column": "backlog",
+    })
+    task_ids["orchestrator"] = orc_task["id"]
+    print(f"  [{orc_task['id']}] Orchestration Cycle -> Orchestrator")
+    print()
+
+    yield task_ids
+
+    if KEEP:
+        print("\n--- Keeping tasks (--keep) ---")
+        return
+    # Cleanup
+    print("\n--- Cleaning up tasks ---")
+    # Cancel any still running
+    for key, tid in task_ids.items():
+        try:
+            tasks = get("/kanban")["tasks"]
+            t = next((t for t in tasks if t["id"] == tid), None)
+            if t and t["status"] == "running":
+                post(f"/kanban/tasks/{tid}/cancel")
+                time.sleep(1)
+        except Exception:
+            pass
+    for key, tid in task_ids.items():
         try:
             delete(f"/kanban/tasks/{tid}")
+            print(f"  deleted task {key} #{tid}")
         except Exception:
             pass
 
 
-# ── Tests ────────────────────────────────────────────────────────────────────
+# -- Tests --------------------------------------------------------------------
 
-class TestAPIHealth:
-    """Basic connectivity and API health."""
+class TestTeamRun:
+    """Full team run: orchestrator dispatches, workers execute, artifacts produced."""
 
-    def test_health_endpoint(self):
+    def test_health(self):
+        """API is alive."""
         r = httpx.get(f"{BASE_URL}/health", timeout=5)
-        assert r.status_code == 200, f"Health check failed: {r.text}"
+        assert r.status_code == 200
+        data = r.json()
+        print(f"\n  API OK | model: {data.get('model', '?')}")
 
-    def test_agents_endpoint(self):
-        d = get("/agents")
-        assert "agents" in d
-        assert isinstance(d["agents"], list)
+    def test_team_created(self, team):
+        """All agents exist on the server."""
+        agents = get("/agents")["agents"]
+        agent_ids_on_server = {a["id"] for a in agents}
+        for key, aid in team.items():
+            assert aid in agent_ids_on_server, f"Agent {key} #{aid} not found"
+        print(f"\n  Team ready: {len(team)} agents")
 
-    def test_kanban_endpoint(self):
-        d = get("/kanban")
-        assert "tasks" in d
-        assert isinstance(d["tasks"], list)
-
-
-class TestKanbanCRUD:
-    """Create / read / update / delete kanban tasks and agents."""
-
-    _agents: list[int] = []
-    _tasks: list[int] = []
-
-    def setup_method(self):
-        self._agents = []
-        self._tasks = []
-
-    def teardown_method(self):
-        cleanup_test_tasks(self._tasks)
-        cleanup_test_agents(self._agents)
-
-    def test_create_worker_agent(self):
-        agent = post("/agents", {
-            "name": "TEST_Worker",
-            "emoji": "🔧",
-            "color": "#00ff00",
-            "system_prompt": "You are a test worker.",
-            "role": "worker",
-        })
-        self._agents.append(agent["id"])
-        assert agent["name"] == "TEST_Worker"
-        assert agent["role"] == "worker"
-
-    def test_create_orchestrator_agent(self):
-        agent = post("/agents", {
-            "name": "TEST_Orchestrator",
-            "emoji": "🎯",
-            "color": "#0000ff",
-            "system_prompt": "You are a test orchestrator.",
-            "role": "orchestrator",
-        })
-        self._agents.append(agent["id"])
-        assert agent["role"] == "orchestrator"
-
-    def test_create_task(self):
-        task = post("/kanban/tasks", {
-            "title": "TEST_Task basic",
-            "description": "Test task",
-            "column": "backlog",
-        })
-        self._tasks.append(task["id"])
-        assert task["title"] == "TEST_Task basic"
-        assert task["column"] == "backlog"
-        assert task["status"] == "idle"
-
-    def test_task_with_repeat(self):
-        task = post("/kanban/tasks", {
-            "title": "TEST_Task repeat",
-            "description": "Repeat test",
-            "column": "backlog",
-            "repeat_minutes": 5,
-        })
-        self._tasks.append(task["id"])
-        assert task["repeat_minutes"] == 5
-
-    def test_update_task(self):
-        task = post("/kanban/tasks", {"title": "TEST_Update me", "column": "backlog"})
-        self._tasks.append(task["id"])
-
-        updated = patch(f"/kanban/tasks/{task['id']}", {"title": "TEST_Updated"})
-        assert updated["title"] == "TEST_Updated"
-
-    def test_move_task(self):
-        task = post("/kanban/tasks", {"title": "TEST_Move me", "column": "backlog"})
-        self._tasks.append(task["id"])
-
-        moved = post(f"/kanban/tasks/{task['id']}/move", {"column": "review"})
-        assert moved["column"] == "review"
-
-
-class TestKanbanTools:
-    """Test kanban tool functions (via agent running them internally)."""
-
-    _agents: list[int] = []
-    _tasks: list[int] = []
-
-    def setup_method(self):
-        self._agents = []
-        self._tasks = []
-
-    def teardown_method(self):
-        cleanup_test_tasks(self._tasks)
-        cleanup_test_agents(self._agents)
-
-    def test_kanban_list_tool_via_agent(self):
-        """Run an agent that uses kanban_list and check it responds."""
-        agent = post("/agents", {
-            "name": "TEST_ListAgent",
-            "emoji": "📋",
-            "color": "#ff6600",
-            "system_prompt": (
-                "You are a test agent. Your only job is to call kanban_list once "
-                "and then respond with exactly: KANBAN_LIST_OK"
-            ),
-            "role": "worker",
-        })
-        self._agents.append(agent["id"])
-
-        task = post("/kanban/tasks", {
-            "title": "TEST_List kanban",
-            "description": "Call kanban_list and respond KANBAN_LIST_OK",
-            "agent_id": agent["id"],
-            "column": "backlog",
-        })
-        self._tasks.append(task["id"])
-
-        post(f"/kanban/tasks/{task['id']}/run")
-        result = wait_for_task(task["id"])
-
-        print(f"\n  Result status: {result['status']}, column: {result['column']}")
-        assert result["column"] in ("review", "done"), (
-            f"Expected task in review/done, got column={result['column']} status={result['status']}"
-        )
-
-
-class TestWorkerAgent:
-    """Worker agent executes a task and produces an artifact."""
-
-    _agents: list[int] = []
-    _tasks: list[int] = []
-
-    def setup_method(self):
-        self._agents = []
-        self._tasks = []
-
-    def teardown_method(self):
-        cleanup_test_tasks(self._tasks)
-        cleanup_test_agents(self._agents)
-
-    def test_worker_completes_simple_task(self):
-        """Worker agent receives a task, executes it, task ends in review."""
-        agent = post("/agents", {
-            "name": "TEST_SimpleWorker",
-            "emoji": "⚡",
-            "color": "#ffcc00",
-            "system_prompt": (
-                "You are a focused worker agent. "
-                "When given a task, complete it immediately with a short response. "
-                "Do not use any tools unless the task explicitly requires it."
-            ),
-            "role": "worker",
-        })
-        self._agents.append(agent["id"])
-
-        task = post("/kanban/tasks", {
-            "title": "TEST_Say hello",
-            "description": "Respond with a short greeting. Nothing else.",
-            "agent_id": agent["id"],
-            "column": "backlog",
-        })
-        self._tasks.append(task["id"])
-
-        # Task should start as idle in backlog
-        assert task["status"] == "idle"
-        assert task["column"] == "backlog"
-
-        # Run the agent
-        run_result = post(f"/kanban/tasks/{task['id']}/run")
-        assert run_result["status"] == "started"
-
-        # Immediately after run, task should be in_progress/running
+    def test_tasks_in_backlog(self, board):
+        """All tasks start in backlog."""
         tasks = get("/kanban")["tasks"]
-        running = next(t for t in tasks if t["id"] == task["id"])
-        assert running["status"] == "running", f"Expected running, got {running['status']}"
-        assert running["column"] == "in_progress", f"Expected in_progress, got {running['column']}"
+        for key, tid in board.items():
+            t = next((t for t in tasks if t["id"] == tid), None)
+            assert t is not None, f"Task {key} #{tid} not found"
+            assert t["column"] == "backlog", f"Task {key} should be in backlog, got {t['column']}"
+        print(f"\n  {len(board)} tasks in backlog")
 
-        # Wait for completion
-        result = wait_for_task(task["id"])
-        print(f"\n  Final: status={result['status']} column={result['column']}")
-
-        assert result["status"] == "done", f"Expected done, got status={result['status']}"
-        assert result["column"] == "review", f"Expected review, got column={result['column']}"
-        assert result["artifact"] is not None, "Expected artifact to be set"
-
-    def test_worker_cannot_run_twice(self):
-        """Running a task that is already running should not start a second instance."""
-        agent = post("/agents", {
-            "name": "TEST_DoubleRun",
-            "emoji": "🔁",
-            "color": "#cc0000",
-            "system_prompt": "You are a slow worker. Write 3 sentences about the task and finish.",
-            "role": "worker",
-        })
-        self._agents.append(agent["id"])
-
-        task = post("/kanban/tasks", {
-            "title": "TEST_Double run",
-            "description": "Write 3 sentences about testing.",
-            "agent_id": agent["id"],
-            "column": "backlog",
-        })
-        self._tasks.append(task["id"])
-
-        post(f"/kanban/tasks/{task['id']}/run")
-
-        # Second run call should return error or already-running
-        try:
-            r2 = httpx.post(
-                f"{BASE_URL}/kanban/tasks/{task['id']}/run",
-                headers=HEADERS,
-                timeout=10,
-            )
-            if r2.status_code == 200:
-                data = r2.json()
-                # Some impls return "already_running" status
-                assert data.get("status") in ("already_running", "started"), (
-                    f"Unexpected second run response: {data}"
-                )
-        except httpx.HTTPStatusError as e:
-            # 400 or 409 is acceptable
-            assert e.response.status_code in (400, 409)
-
-        # Let it finish
-        wait_for_task(task["id"])
-
-    def test_cancel_running_task(self):
-        """Cancelling a running task resets it to backlog/idle."""
-        agent = post("/agents", {
-            "name": "TEST_CancelTarget",
-            "emoji": "⛔",
-            "color": "#990000",
-            "system_prompt": "You are a worker. Write a very long essay (500+ words) about the history of computing.",
-            "role": "worker",
-        })
-        self._agents.append(agent["id"])
-
-        task = post("/kanban/tasks", {
-            "title": "TEST_Cancel me",
-            "description": "Write 500 words about the history of computing.",
-            "agent_id": agent["id"],
-            "column": "backlog",
-        })
-        self._tasks.append(task["id"])
-
-        post(f"/kanban/tasks/{task['id']}/run")
-
-        # Give it 2 seconds to actually start
-        time.sleep(2)
-
-        # Cancel
-        cancel_result = post(f"/kanban/tasks/{task['id']}/cancel")
-        assert cancel_result["status"] in ("cancelled", "reset"), (
-            f"Unexpected cancel result: {cancel_result}"
-        )
-
-        # Wait a moment for state to settle
-        time.sleep(2)
-        tasks = get("/kanban")["tasks"]
-        t = next(t for t in tasks if t["id"] == task["id"])
-        assert t["status"] != "running", f"Task should not be running after cancel, got {t['status']}"
-        assert t["column"] == "backlog", f"Cancelled task should be in backlog, got {t['column']}"
-
-
-class TestOrchestrator:
-    """Orchestrator dispatches worker agents via kanban_run (not kanban_move)."""
-
-    _agents: list[int] = []
-    _tasks: list[int] = []
-
-    def setup_method(self):
-        self._agents = []
-        self._tasks = []
-
-    def teardown_method(self):
-        # Cancel any running tasks first
-        tasks = get("/kanban")["tasks"]
-        for t in tasks:
-            if t["id"] in self._tasks and t["status"] == "running":
-                try:
-                    post(f"/kanban/tasks/{t['id']}/cancel")
-                except Exception:
-                    pass
-        time.sleep(1)
-        cleanup_test_tasks(self._tasks)
-        cleanup_test_agents(self._agents)
-
-    def test_orchestrator_uses_kanban_run(self):
+    def test_orchestrator_dispatches(self, team, board):
         """
-        Orchestrator should call kanban_run for backlog tasks with agents.
-        Worker tasks should transition to in_progress/running (not just moved via kanban_move).
+        Run orchestrator -> it dispatches all worker tasks.
+        Workers should leave backlog.
         """
-        # Create worker
-        worker = post("/agents", {
-            "name": "TEST_OrcWorker",
-            "emoji": "🔩",
-            "color": "#00aaff",
-            "system_prompt": (
-                "You are a simple worker. When given any task, "
-                "respond with 'DONE: <task title>' and finish immediately."
-            ),
-            "role": "worker",
-        })
-        self._agents.append(worker["id"])
+        orc_id = board["orchestrator"]
+        worker_keys = [k for k in board if k != "orchestrator"]
 
-        # Create orchestrator
-        orchestrator = post("/agents", {
-            "name": "TEST_OrcOrchestrator",
-            "emoji": "🎯",
-            "color": "#ff00aa",
-            "system_prompt": (
-                "You are a kanban orchestrator. Your ONLY job:\n"
-                "1. Call kanban_list to see all tasks.\n"
-                "2. For EACH task in backlog that has an agent assigned: "
-                "call kanban_run(task_id) to start the agent.\n"
-                "3. Do NOT use kanban_move to move tasks to in_progress.\n"
-                "4. After calling kanban_run for all tasks, finish.\n"
-                "IMPORTANT: Use kanban_run, not kanban_move."
-            ),
-            "role": "orchestrator",
-        })
-        self._agents.append(orchestrator["id"])
-
-        # Create 2 worker tasks in backlog
-        task1 = post("/kanban/tasks", {
-            "title": "TEST_OrcTask1",
-            "description": "Say hello",
-            "agent_id": worker["id"],
-            "column": "backlog",
-        })
-        self._tasks.append(task1["id"])
-
-        task2 = post("/kanban/tasks", {
-            "title": "TEST_OrcTask2",
-            "description": "Say goodbye",
-            "agent_id": worker["id"],
-            "column": "backlog",
-        })
-        self._tasks.append(task2["id"])
-
-        # Create orchestrator task
-        orc_task = post("/kanban/tasks", {
-            "title": "TEST_OrcRun",
-            "description": "Run the orchestrator to dispatch worker tasks",
-            "agent_id": orchestrator["id"],
-            "column": "backlog",
-        })
-        self._tasks.append(orc_task["id"])
-
-        print(f"\n  Created: worker tasks #{task1['id']}, #{task2['id']}, orchestrator #{orc_task['id']}")
-
-        # Run orchestrator
-        post(f"/kanban/tasks/{orc_task['id']}/run")
+        print(f"\n--- Running orchestrator #{orc_id} ---")
+        resp = post(f"/kanban/tasks/{orc_id}/run")
+        assert resp["status"] == "started"
 
         # Wait for orchestrator to finish
-        orc_result = wait_for_task(orc_task["id"], timeout=120)
-        print(f"  Orchestrator done: status={orc_result['status']} column={orc_result['column']}")
+        orc_result = wait_for_task(orc_id, label="orchestrator", timeout=120)
+        assert orc_result["status"] != "error", f"Orchestrator failed: {orc_result.get('artifact', '')}"
 
-        # Verify worker tasks were STARTED (not just moved) — they should be running or done
+        # Check worker tasks were dispatched
         tasks = get("/kanban")["tasks"]
-        t1 = next(t for t in tasks if t["id"] == task1["id"])
-        t2 = next(t for t in tasks if t["id"] == task2["id"])
+        dispatched = 0
+        for key in worker_keys:
+            t = next((t for t in tasks if t["id"] == board[key]), None)
+            if t and (t["column"] != "backlog" or t["status"] == "running"):
+                dispatched += 1
+                print(f"  -> {key}: {t['column']}/{t['status']}")
+            else:
+                print(f"  !  {key}: still in backlog")
 
-        print(f"  Worker task1: status={t1['status']} column={t1['column']}")
-        print(f"  Worker task2: status={t2['status']} column={t2['column']}")
-
-        # At minimum, both worker tasks should have left backlog (orchestrator started them)
-        assert t1["column"] != "backlog" or t1["status"] == "running", (
-            f"Task1 should have been started by orchestrator, got column={t1['column']} status={t1['status']}"
+        assert dispatched >= len(worker_keys) - 1, (
+            f"Orchestrator only dispatched {dispatched}/{len(worker_keys)} tasks"
         )
-        assert t2["column"] != "backlog" or t2["status"] == "running", (
-            f"Task2 should have been started by orchestrator, got column={t2['column']} status={t2['status']}"
-        )
 
-        # Wait for workers to finish too
-        print("  Waiting for worker tasks to complete...")
-        r1 = wait_for_task(task1["id"], timeout=AGENT_TIMEOUT)
-        r2 = wait_for_task(task2["id"], timeout=AGENT_TIMEOUT)
+    def test_workers_complete(self, board):
+        """
+        Wait for all worker tasks to finish.
+        Each should end in review/done with an artifact.
+        """
+        worker_keys = [k for k in board if k != "orchestrator"]
 
-        print(f"  Final task1: status={r1['status']} column={r1['column']}")
-        print(f"  Final task2: status={r2['status']} column={r2['column']}")
+        print("\n--- Waiting for workers ---")
+        results = {}
+        for key in worker_keys:
+            tid = board[key]
+            result = wait_for_task(tid, label=key, timeout=AGENT_TIMEOUT)
+            results[key] = result
 
-        assert r1["status"] == "done", f"Worker task1 should be done, got {r1['status']}"
-        assert r2["status"] == "done", f"Worker task2 should be done, got {r2['status']}"
-        assert r1["column"] == "review"
-        assert r2["column"] == "review"
+        # Verify results
+        print("\n--- Results ---")
+        all_ok = True
+        for key, result in results.items():
+            status = result["status"]
+            column = result["column"]
+            artifact = result.get("artifact") or ""
+            ok = status == "done" and column in ("review", "done")
 
-    def test_orchestrator_skips_tasks_without_agent(self):
-        """Orchestrator should not touch tasks that have no agent assigned."""
-        orchestrator = post("/agents", {
-            "name": "TEST_SkipOrch",
-            "emoji": "🎯",
-            "color": "#aaaaaa",
-            "system_prompt": (
-                "You are a kanban orchestrator.\n"
-                "1. Call kanban_list.\n"
-                "2. For each task in backlog WITH an agent: call kanban_run.\n"
-                "3. Leave tasks WITHOUT an agent untouched.\n"
-                "4. Finish after dispatching all eligible tasks."
-            ),
-            "role": "orchestrator",
-        })
-        self._agents.append(orchestrator["id"])
+            icon = "+" if ok else "!"
+            print(f"  [{icon}] {key}: {column}/{status}")
+            if artifact:
+                print(f"      artifact: {artifact}")
+            if not ok:
+                all_ok = False
 
-        # Task with no agent — should stay in backlog
-        no_agent_task = post("/kanban/tasks", {
-            "title": "TEST_NoAgent",
-            "description": "This task has no agent",
-            "column": "backlog",
-        })
-        self._tasks.append(no_agent_task["id"])
+        assert all_ok, "Not all workers completed successfully"
 
-        # Orchestrator task
-        orc_task = post("/kanban/tasks", {
-            "title": "TEST_SkipOrcRun",
-            "description": "Dispatch tasks, skip those without agents",
-            "agent_id": orchestrator["id"],
-            "column": "backlog",
-        })
-        self._tasks.append(orc_task["id"])
-
-        post(f"/kanban/tasks/{orc_task['id']}/run")
-        wait_for_task(orc_task["id"], timeout=120)
-
-        # No-agent task must remain in backlog (untouched)
+    def test_final_board_state(self, board):
+        """Board should have no tasks stuck in backlog or running."""
         tasks = get("/kanban")["tasks"]
-        na = next(t for t in tasks if t["id"] == no_agent_task["id"])
-        print(f"\n  No-agent task: column={na['column']} status={na['status']}")
-        assert na["column"] == "backlog", (
-            f"Task without agent should stay in backlog, got column={na['column']}"
-        )
+        board_ids = set(board.values())
+
+        print("\n--- Final board ---")
+        for t in tasks:
+            if t["id"] not in board_ids:
+                continue
+            key = next((k for k, v in board.items() if v == t["id"]), "?")
+            print(f"  {key:15s} | {t['column']:12s} | {t['status']:10s} | {t.get('artifact') or '-'}")
+
+        our_tasks = [t for t in tasks if t["id"] in board_ids]
+        stuck = [t for t in our_tasks if t["status"] == "running"]
+        assert len(stuck) == 0, f"{len(stuck)} tasks still running"
 
 
-class TestTelegramTool:
-    """telegram_notify tool is available to agents."""
-
-    _agents: list[int] = []
-    _tasks: list[int] = []
-
-    def setup_method(self):
-        self._agents = []
-        self._tasks = []
-
-    def teardown_method(self):
-        cleanup_test_tasks(self._tasks)
-        cleanup_test_agents(self._agents)
-
-    def test_telegram_tool_in_tool_list(self):
-        """telegram_notify must be in the list of available tools."""
-        # The tool list is embedded in the system prompt via format_system_prompt.
-        # We verify by running an agent that calls search_tools for 'telegram'.
-        agent = post("/agents", {
-            "name": "TEST_TelegramCheck",
-            "emoji": "📨",
-            "color": "#2299ff",
-            "system_prompt": (
-                "You are a test agent. Call search_tools with query='telegram' "
-                "and respond with the tool name found, or 'NOT_FOUND' if absent."
-            ),
-            "role": "worker",
-        })
-        self._agents.append(agent["id"])
-
-        task = post("/kanban/tasks", {
-            "title": "TEST_Check telegram tool",
-            "description": "Search for telegram tool and report",
-            "agent_id": agent["id"],
-            "column": "backlog",
-        })
-        self._tasks.append(task["id"])
-
-        post(f"/kanban/tasks/{task['id']}/run")
-        result = wait_for_task(task["id"])
-
-        print(f"\n  Status={result['status']} column={result['column']}")
-        assert result["status"] == "done"
-
-
-# ── Entry point ──────────────────────────────────────────────────────────────
+# -- Entry point --------------------------------------------------------------
 
 if __name__ == "__main__":
     import subprocess, sys

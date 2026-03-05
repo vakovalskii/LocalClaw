@@ -68,7 +68,14 @@ export interface ToolEvent {
   result: string;
 }
 
+export interface ToolCall {
+  id: string;
+  function: { name: string; arguments: string };
+}
+
 export interface ChatMessage {
   role: 'user' | 'assistant' | 'tool';
   content: string;
+  tool_calls?: ToolCall[];
+  tool_call_id?: string;
 }

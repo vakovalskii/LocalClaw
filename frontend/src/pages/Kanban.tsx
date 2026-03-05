@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { api, API_BASE, getApiKey } from '../api';
 import { useToast } from '../components/Toast';
+import { ConfirmDialog, PromptDialog } from '../components/Dialog';
 import type { Agent, KanbanTask, Board } from '../types';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
@@ -53,6 +54,10 @@ export default function Kanban() {
   const [renamingBoard, setRenamingBoard] = useState<number | null>(null);
   const [renameValue, setRenameValue] = useState('');
 
+  // Dialog state
+  const [showNewBoardPrompt, setShowNewBoardPrompt] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<{ message: string; onConfirm: () => void } | null>(null);
+
   // Drag state
   const draggedId = useRef<number | null>(null);
   const [dragOverCol, setDragOverCol] = useState<string | null>(null);
@@ -101,9 +106,7 @@ export default function Kanban() {
 
   // ─── Board Actions ──────────────────────────────────────────────────────
 
-  async function createBoard() {
-    const name = prompt('Board name:');
-    if (!name) return;
+  async function createBoard(name: string) {
     try {
       const d = await api<{ board: Board }>('POST', '/kanban/boards', { name, emoji: '' });
       setBoards(b => [...b, d.board]);
@@ -112,17 +115,21 @@ export default function Kanban() {
     } catch (e: any) { toast(e.message); }
   }
 
-  async function deleteBoard(id: number) {
-    if (!confirm('Delete this board and all its tasks?')) return;
-    try {
-      await api('DELETE', `/kanban/boards/${id}`);
-      setBoards(b => b.filter(x => x.id !== id));
-      if (activeBoard === id) {
-        const remaining = boards.filter(x => x.id !== id);
-        setActiveBoard(remaining.length > 0 ? remaining[0].id : 0);
-      }
-      toast('Board deleted');
-    } catch (e: any) { toast(e.message); }
+  function deleteBoard(id: number) {
+    setConfirmAction({
+      message: 'Delete this board and all its tasks?',
+      onConfirm: async () => {
+        try {
+          await api('DELETE', `/kanban/boards/${id}`);
+          setBoards(b => b.filter(x => x.id !== id));
+          if (activeBoard === id) {
+            const remaining = boards.filter(x => x.id !== id);
+            setActiveBoard(remaining.length > 0 ? remaining[0].id : 0);
+          }
+          toast('Board deleted');
+        } catch (e: any) { toast(e.message); }
+      },
+    });
   }
 
   async function renameBoard(id: number, name: string) {
@@ -153,13 +160,17 @@ export default function Kanban() {
     } catch (e: any) { toast(e.message); }
   }
 
-  async function deleteTask(id: number) {
-    if (!confirm('Delete task?')) return;
-    try {
-      await api('DELETE', `/kanban/tasks/${id}`);
-      loadTasks();
-      toast('Task deleted');
-    } catch (e: any) { toast(e.message); }
+  function deleteTask(id: number) {
+    setConfirmAction({
+      message: 'Delete this task?',
+      onConfirm: async () => {
+        try {
+          await api('DELETE', `/kanban/tasks/${id}`);
+          loadTasks();
+          toast('Task deleted');
+        } catch (e: any) { toast(e.message); }
+      },
+    });
   }
 
   async function moveTask(id: number, column: string) {
@@ -267,7 +278,7 @@ export default function Kanban() {
         ))}
         <button
           className="px-4 h-full text-[11px] text-text3 hover:text-amber border-r border-border hover:bg-bg2 transition-all"
-          onClick={createBoard}
+          onClick={() => setShowNewBoardPrompt(true)}
         >+ Board</button>
       </div>
 
@@ -389,6 +400,22 @@ export default function Kanban() {
           }}
         />
       )}
+
+      <PromptDialog
+        open={showNewBoardPrompt}
+        title="NEW BOARD"
+        placeholder="Board name..."
+        onSubmit={(name) => { setShowNewBoardPrompt(false); createBoard(name); }}
+        onCancel={() => setShowNewBoardPrompt(false)}
+      />
+
+      <ConfirmDialog
+        open={!!confirmAction}
+        message={confirmAction?.message || ''}
+        confirmLabel="Delete"
+        onConfirm={() => { confirmAction?.onConfirm(); setConfirmAction(null); }}
+        onCancel={() => setConfirmAction(null)}
+      />
     </div>
   );
 }
@@ -728,8 +755,10 @@ function AgentEditorModal({
     } catch (e: any) { toast(e.message); }
   }
 
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
   async function handleDelete() {
-    if (!agent || !confirm('Delete this agent?')) return;
+    if (!agent) return;
     try {
       await api('DELETE', `/agents/${agent.id}`);
       toast('Agent deleted');
@@ -853,12 +882,19 @@ function AgentEditorModal({
       {/* Footer */}
       <div className="flex items-center gap-2 px-6 py-3 border-t border-border bg-bg1 flex-shrink-0">
         {agent && (
-          <button className="px-4 py-1.5 text-[11px] text-red border border-red/30 hover:bg-red/10 transition-all" onClick={handleDelete}>Delete</button>
+          <button className="px-4 py-1.5 text-[11px] text-red border border-red/30 hover:bg-red/10 transition-all" onClick={() => setShowDeleteConfirm(true)}>Delete</button>
         )}
         <div className="flex-1" />
         <button className="px-4 py-1.5 text-[11px] text-text3 border border-border hover:bg-bg2 transition-all" onClick={onClose}>Cancel</button>
         <button className="px-4 py-1.5 text-[11px] text-amber border border-amber/30 hover:bg-amber/10 transition-all" onClick={handleSave}>Save</button>
       </div>
+      <ConfirmDialog
+        open={showDeleteConfirm}
+        message="Delete this agent?"
+        confirmLabel="Delete"
+        onConfirm={() => { setShowDeleteConfirm(false); handleDelete(); }}
+        onCancel={() => setShowDeleteConfirm(false)}
+      />
     </div>
   );
 }
