@@ -1689,13 +1689,25 @@ async function loadTrace(sessionKey) {
           <span style="color:var(--text2)">${formatEventSummary(ev)}</span>
           <span class="trace-ts">${fmtTime(ev.at)}</span>
         </div>
-        <div class="trace-body">${JSON.stringify(ev.data, null, 2)}</div>
+        <div class="trace-body">${escHtml(truncateTraceData(ev.data))}</div>
       `;
       trace.appendChild(el);
     });
   } catch(e) {
     trace.innerHTML = `<div style="padding:16px;color:var(--red);font-size:11px;">Error: ${e.message}</div>`;
   }
+}
+
+function truncateTraceData(data) {
+  // Clone and truncate long string fields before JSON.stringify
+  const MAX = 400;
+  const clone = JSON.parse(JSON.stringify(data));
+  for (const key of ['result', 'output', 'text']) {
+    if (typeof clone[key] === 'string' && clone[key].length > MAX) {
+      clone[key] = clone[key].slice(0, MAX) + `… [${clone[key].length} chars]`;
+    }
+  }
+  return JSON.stringify(clone, null, 2);
 }
 
 function formatEventSummary(ev) {
