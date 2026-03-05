@@ -1,11 +1,13 @@
 """FastAPI app — agent endpoint consumed by bot and admin UI."""
 
 import json
+import os
 import asyncio
 from typing import AsyncGenerator
 
-from fastapi import FastAPI, HTTPException, Depends, Header
-from fastapi.responses import StreamingResponse
+from fastapi import FastAPI, HTTPException, Depends, Header, Query
+from fastapi.responses import StreamingResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -24,45 +26,82 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Serve admin UI at /admin
+_admin_dir = os.path.join(os.path.dirname(__file__), "..", "admin")
+if os.path.isdir(_admin_dir):
+    app.mount("/admin", StaticFiles(directory=_admin_dir, html=True), name="admin")
+
 
 def _check_auth(x_api_key: str = Header(default="")):
     if CONFIG.api_secret and x_api_key != CONFIG.api_secret:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
 
+def _safe_path(path: str) -> str:
+    """Resolve path, block traversal outside workspace."""
+    if os.path.isabs(path):
+        resolved = os.path.realpath(path)
+    else:
+        resolved = os.path.realpath(os.path.join(CONFIG.workspace, path))
+    workspace = os.path.realpath(CONFIG.workspace)
+    if not resolved.startswith(workspace):
+        raise HTTPException(status_code=403, detail="Path outside workspace")
+    return resolved
+
+
+# ── Models ────────────────────────────────────────────────────────────────────
+
 class ChatRequest(BaseModel):
     message: str
     chat_id: int = 0
     stream: bool = False
 
-
 class ClearRequest(BaseModel):
     chat_id: int = 0
 
+class WriteFileRequest(BaseModel):
+    path: str
+    content: str
+
+class TaskCreateRequest(BaseModel):
+    name: str
+    prompt: str
+    interval_minutes: int | None = None
+    cron: str | None = None
+
+class SettingsRequest(BaseModel):
+    model: str | None = None
+    llm_base_url: str | None = None
+    llm_api_key: str | None = None
+    brave_api_key: str | None = None
+    memory_enabled: bool | None = None
+    max_iterations: int | None = None
+    command_timeout: int | None = None
+
+
+# ── Health ────────────────────────────────────────────────────────────────────
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "model": CONFIG.model}
+    return {"status": "ok", "model": CONFIG.model, "workspace": CONFIG.workspace}
 
+
+# ── Chat ──────────────────────────────────────────────────────────────────────
 
 @app.post("/chat")
 async def chat(req: ChatRequest, _=Depends(_check_auth)):
     chat_id = req.chat_id or CONFIG.owner_id or 0
-
     if req.stream:
         return StreamingResponse(
             _stream_agent(chat_id, req.message),
             media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
-
     result = await run_agent(chat_id, req.message)
     return {
         "text": result.text,
         "tool_events": result.tool_events,
-        "tokens": {
-            "prompt": result.total_prompt_tokens,
-            "completion": result.total_completion_tokens,
-        },
+        "tokens": {"prompt": result.total_prompt_tokens, "completion": result.total_completion_tokens},
     }
 
 
@@ -72,13 +111,9 @@ async def _stream_agent(chat_id: int, message: str) -> AsyncGenerator[str, None]
     async def on_event(event_type: str, data: dict):
         await queue.put((event_type, data))
 
-    async def run():
-        try:
-            await run_agent(chat_id, message, on_event=on_event)
-        finally:
-            await queue.put(None)  # sentinel
-
-    task = asyncio.create_task(run())
+    asyncio.create_task(
+        _run_and_signal(chat_id, message, on_event, queue)
+    )
 
     while True:
         item = await queue.get()
@@ -86,7 +121,14 @@ async def _stream_agent(chat_id: int, message: str) -> AsyncGenerator[str, None]
             yield "data: [DONE]\n\n"
             break
         event_type, data = item
-        yield f"data: {json.dumps({'type': event_type, **data})}\n\n"
+        yield f"data: {json.dumps({'type': event_type, **data}, ensure_ascii=False)}\n\n"
+
+
+async def _run_and_signal(chat_id, message, on_event, queue):
+    try:
+        await run_agent(chat_id, message, on_event=on_event)
+    finally:
+        await queue.put(None)
 
 
 @app.post("/clear")
@@ -103,19 +145,176 @@ async def get_history(chat_id: int = 0, _=Depends(_check_auth)):
     return {"messages": session.history}
 
 
-@app.get("/tasks")
-async def list_tasks(_=Depends(_check_auth)):
-    return {"tasks": get_scheduled_tasks()}
+# ── Sessions & Events ─────────────────────────────────────────────────────────
+
+@app.get("/sessions")
+async def list_sessions(_=Depends(_check_auth)):
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT session_key, created_at, updated_at FROM sessions ORDER BY updated_at DESC LIMIT 50"
+    ).fetchall()
+    conn.close()
+    return {"sessions": [dict(r) for r in rows]}
 
 
 @app.get("/events")
-async def get_events(session_key: str = "", limit: int = 50, _=Depends(_check_auth)):
+async def get_events(session_key: str = "", limit: int = 100, _=Depends(_check_auth)):
     conn = get_db()
     rows = conn.execute(
         "SELECT event_type, data, created_at FROM agent_events WHERE session_key = ? ORDER BY id DESC LIMIT ?",
         (session_key, limit),
     ).fetchall()
     conn.close()
-    import json as _json
-    events = [{"type": r["event_type"], "data": _json.loads(r["data"]), "at": r["created_at"]} for r in rows]
+    events = [{"type": r["event_type"], "data": json.loads(r["data"]), "at": r["created_at"]} for r in rows]
     return {"events": list(reversed(events))}
+
+
+# ── Tasks ─────────────────────────────────────────────────────────────────────
+
+@app.get("/tasks")
+async def list_tasks(_=Depends(_check_auth)):
+    return {"tasks": get_scheduled_tasks()}
+
+
+@app.post("/tasks")
+async def create_task(req: TaskCreateRequest, _=Depends(_check_auth)):
+    if not req.interval_minutes and not req.cron:
+        raise HTTPException(status_code=400, detail="interval_minutes or cron required")
+    conn = get_db()
+    conn.execute(
+        "INSERT INTO scheduled_tasks (name, cron, interval_minutes, prompt) VALUES (?, ?, ?, ?)",
+        (req.name, req.cron, req.interval_minutes, req.prompt),
+    )
+    conn.commit()
+    conn.close()
+    return {"status": "created"}
+
+
+@app.delete("/tasks/{task_id}")
+async def delete_task(task_id: int, _=Depends(_check_auth)):
+    conn = get_db()
+    conn.execute("DELETE FROM scheduled_tasks WHERE id = ?", (task_id,))
+    conn.commit()
+    conn.close()
+    return {"status": "deleted"}
+
+
+@app.patch("/tasks/{task_id}/toggle")
+async def toggle_task(task_id: int, _=Depends(_check_auth)):
+    conn = get_db()
+    row = conn.execute("SELECT enabled FROM scheduled_tasks WHERE id = ?", (task_id,)).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Task not found")
+    conn.execute("UPDATE scheduled_tasks SET enabled = ? WHERE id = ?", (0 if row["enabled"] else 1, task_id))
+    conn.commit()
+    conn.close()
+    return {"status": "toggled"}
+
+
+# ── Files ─────────────────────────────────────────────────────────────────────
+
+@app.get("/files")
+async def list_files(path: str = "", _=Depends(_check_auth)):
+    safe = _safe_path(path or ".")
+    if not os.path.exists(safe):
+        raise HTTPException(status_code=404, detail="Path not found")
+    if os.path.isfile(safe):
+        raise HTTPException(status_code=400, detail="Not a directory")
+
+    entries = []
+    for name in sorted(os.listdir(safe)):
+        full = os.path.join(safe, name)
+        rel = os.path.relpath(full, CONFIG.workspace)
+        entries.append({
+            "name": name,
+            "path": rel,
+            "type": "dir" if os.path.isdir(full) else "file",
+            "size": os.path.getsize(full) if os.path.isfile(full) else None,
+            "modified": os.path.getmtime(full),
+        })
+    return {"path": os.path.relpath(safe, CONFIG.workspace), "entries": entries}
+
+
+@app.get("/file")
+async def read_file(path: str, _=Depends(_check_auth)):
+    safe = _safe_path(path)
+    if not os.path.isfile(safe):
+        raise HTTPException(status_code=404, detail="File not found")
+    try:
+        content = open(safe, errors="replace").read()
+        return {"path": path, "content": content, "size": len(content)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/file")
+async def write_file(req: WriteFileRequest, _=Depends(_check_auth)):
+    safe = _safe_path(req.path)
+    os.makedirs(os.path.dirname(safe), exist_ok=True)
+    with open(safe, "w") as f:
+        f.write(req.content)
+    return {"status": "written", "size": len(req.content)}
+
+
+@app.delete("/file")
+async def delete_file(path: str = Query(...), _=Depends(_check_auth)):
+    import shutil
+    safe = _safe_path(path)
+    if not os.path.exists(safe):
+        raise HTTPException(status_code=404, detail="Not found")
+    if os.path.isdir(safe):
+        shutil.rmtree(safe)
+    else:
+        os.remove(safe)
+    return {"status": "deleted"}
+
+
+# ── Settings ──────────────────────────────────────────────────────────────────
+
+@app.get("/settings")
+async def get_settings(_=Depends(_check_auth)):
+    return {
+        "model": CONFIG.model,
+        "llm_base_url": CONFIG.llm_base_url,
+        "llm_api_key": "***" if CONFIG.llm_api_key else "",
+        "brave_api_key": "***" if CONFIG.brave_api_key else "",
+        "memory_enabled": CONFIG.memory_enabled,
+        "max_iterations": CONFIG.max_iterations,
+        "command_timeout": CONFIG.command_timeout,
+        "workspace": CONFIG.workspace,
+        "owner_id": CONFIG.owner_id,
+    }
+
+
+@app.post("/settings")
+async def update_settings(req: SettingsRequest, _=Depends(_check_auth)):
+    """Write changed settings back to secrets/core.env."""
+    env_path = os.path.join(os.path.dirname(__file__), "..", "secrets", "core.env")
+    if not os.path.exists(env_path):
+        raise HTTPException(status_code=404, detail="secrets/core.env not found")
+
+    lines = open(env_path).readlines()
+    updates = {k: v for k, v in req.model_dump().items() if v is not None}
+    key_map = {
+        "model": "MODEL", "llm_base_url": "LLM_BASE_URL", "llm_api_key": "LLM_API_KEY",
+        "brave_api_key": "BRAVE_API_KEY", "memory_enabled": "MEMORY_ENABLED",
+        "max_iterations": "MAX_ITERATIONS", "command_timeout": "COMMAND_TIMEOUT",
+    }
+    new_lines = []
+    updated = set()
+    for line in lines:
+        written = False
+        for field, env_key in key_map.items():
+            if field in updates and line.startswith(f"{env_key}="):
+                val = str(updates[field]).lower() if isinstance(updates[field], bool) else str(updates[field])
+                new_lines.append(f"{env_key}={val}\n")
+                updated.add(field)
+                written = True
+                break
+        if not written:
+            new_lines.append(line)
+
+    with open(env_path, "w") as f:
+        f.writelines(new_lines)
+
+    return {"status": "saved", "updated": list(updated), "note": "Restart core to apply changes"}
