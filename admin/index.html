@@ -1056,6 +1056,7 @@
     <a href="#files" class="nav-link">⬡ FILES</a>
     <a href="#logs" class="nav-link">⬡ LOGS</a>
     <a href="#settings" class="nav-link">⬡ SETTINGS</a>
+    <a href="#" id="logout-btn" class="nav-link" style="color:var(--text3);font-size:10px;" title="Выйти">⏻</a>
   </nav>
 </div>
 
@@ -1317,6 +1318,22 @@
 <!-- Toast -->
 <div id="toast"></div>
 
+<!-- Login overlay -->
+<div id="login-overlay" style="display:none;position:fixed;inset:0;z-index:9999;background:var(--bg);display:none;align-items:center;justify-content:center;">
+  <div style="display:flex;flex-direction:column;align-items:center;gap:24px;max-width:380px;width:100%;padding:24px;">
+    <div style="font-size:18px;font-weight:700;color:var(--amber);letter-spacing:0.08em;">LocalTaskClaw</div>
+    <div style="color:var(--text2);font-size:12px;text-align:center;line-height:1.6;">
+      Введи API Secret для доступа к панели.<br>
+      Он был показан при установке, или найди его в<br>
+      <code style="color:var(--amber);background:var(--bg2);padding:2px 6px;border-radius:2px;">~/.localtaskclaw/app/secrets/core.env</code>
+    </div>
+    <input id="login-key" class="form-input" type="password" placeholder="API Secret"
+      style="width:100%;font-size:14px;padding:12px 16px;text-align:center;">
+    <button id="login-btn" class="btn" style="width:100%;height:44px;font-size:13px;">ВОЙТИ</button>
+    <div id="login-error" style="color:var(--red);font-size:11px;display:none;"></div>
+  </div>
+</div>
+
 <!-- Agents Panel -->
 <div id="agents-panel">
   <div id="agents-panel-header">
@@ -1503,18 +1520,72 @@
 
 const API = `${window.location.protocol}//${window.location.hostname}:11387`;
 let chatHistoryLoaded = false;
-const API_KEY = (() => {
-  let k = localStorage.getItem('lc_api_key');
-  if (!k) {
-    k = prompt('Enter API_SECRET (from secrets/core.env):') || '';
-    if (k) localStorage.setItem('lc_api_key', k);
-  }
-  return k;
-})();
+let API_KEY = localStorage.getItem('lc_api_key') || '';
 
 let CHAT_ID = parseInt(localStorage.getItem('lc_chat_id') || '0');
 
 const headers = () => ({ 'Content-Type': 'application/json', 'X-Api-Key': API_KEY });
+
+// Show login screen if no key stored
+function showLogin() {
+  document.getElementById('login-overlay').style.display = 'flex';
+  document.getElementById('topbar').style.display = 'none';
+  document.getElementById('content').style.display = 'none';
+  document.getElementById('statusbar').style.display = 'none';
+  setTimeout(() => document.getElementById('login-key').focus(), 100);
+}
+
+function hideLogin() {
+  document.getElementById('login-overlay').style.display = 'none';
+  document.getElementById('topbar').style.display = '';
+  document.getElementById('content').style.display = '';
+  document.getElementById('statusbar').style.display = '';
+}
+
+async function tryLogin(key) {
+  const r = await fetch(API + '/health', { headers: { 'X-Api-Key': key } });
+  if (!r.ok) return false;
+  // Verify auth actually works (health is public, try settings)
+  const r2 = await fetch(API + '/settings', { headers: { 'X-Api-Key': key } });
+  return r2.ok;
+}
+
+document.getElementById('login-btn').addEventListener('click', async () => {
+  const key = document.getElementById('login-key').value.trim();
+  const err = document.getElementById('login-error');
+  if (!key) { err.textContent = 'Введи ключ'; err.style.display = ''; return; }
+  err.style.display = 'none';
+  document.getElementById('login-btn').textContent = '...';
+  try {
+    const ok = await tryLogin(key);
+    if (ok) {
+      API_KEY = key;
+      localStorage.setItem('lc_api_key', key);
+      hideLogin();
+      checkHealth();
+    } else {
+      err.textContent = 'Неверный API Secret';
+      err.style.display = '';
+    }
+  } catch(e) {
+    err.textContent = 'Сервер недоступен';
+    err.style.display = '';
+  }
+  document.getElementById('login-btn').textContent = 'ВОЙТИ';
+});
+
+document.getElementById('login-key').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') document.getElementById('login-btn').click();
+});
+
+// On load: check if stored key works, otherwise show login
+(async () => {
+  if (!API_KEY) { showLogin(); return; }
+  try {
+    const ok = await tryLogin(API_KEY);
+    if (!ok) { API_KEY = ''; localStorage.removeItem('lc_api_key'); showLogin(); }
+  } catch { showLogin(); }
+})();
 
 // ── Utils ─────────────────────────────────────────────────────────────────────
 
@@ -1578,6 +1649,13 @@ function navigate(hash) {
 
 window.addEventListener('hashchange', () => navigate(location.hash));
 navigate(location.hash || '#chat');
+
+document.getElementById('logout-btn').addEventListener('click', (e) => {
+  e.preventDefault();
+  localStorage.removeItem('lc_api_key');
+  API_KEY = '';
+  showLogin();
+});
 
 // ── Health check ──────────────────────────────────────────────────────────────
 
