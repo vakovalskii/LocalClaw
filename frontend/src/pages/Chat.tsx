@@ -40,7 +40,8 @@ export default function Chat() {
           }
         }
         if (!chatId) return;
-        const history: ChatMessage[] = await api('GET', `/history?chat_id=${chatId}`);
+        const d = await api<{ messages: ChatMessage[] }>('GET', `/history?chat_id=${chatId}`);
+        const history = (d.messages || []).filter(m => m.content && m.content !== 'null');
         const display: DisplayMessage[] = [];
         for (const msg of history) {
           if (msg.role === 'user') {
@@ -168,7 +169,7 @@ export default function Chat() {
             const evt = JSON.parse(raw);
 
             if (evt.type === 'text') {
-              accText += evt.content || '';
+              accText += evt.text || evt.content || '';
               setStreamText(accText);
               scrollToBottom();
             } else if (evt.type === 'tool_start') {
@@ -184,7 +185,7 @@ export default function Chat() {
               setStreamTools([...accTools]);
               setRunningTool('');
             } else if (evt.type === 'error') {
-              accText += '\n\n**Error:** ' + (evt.content || evt.message || 'Unknown error');
+              accText += '\n\n**Error:** ' + (evt.text || evt.content || evt.message || 'Unknown error');
               setStreamText(accText);
             }
           } catch {
